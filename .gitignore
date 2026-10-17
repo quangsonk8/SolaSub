@@ -1,0 +1,33 @@
+# ─── Moi truong Python ────────────────────────────────────────────────
+venv/
+venv-cpu/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ─── San pham dong goi (hang tram MB, phat hanh qua Releases) ─────────
+build/SolaSub/
+build/py-embed.zip
+build/get-pip.py
+build/sandbox/ketqua/
+installer/Output/
+installer/_tmpout*/
+
+# ─── Nhi phan di kem (95 MB, tai rieng — xem README) ─────────────────
+tools/
+
+# ─── File mau de thu trong sandbox (nguoi dung tu dat vao) ───────────
+build/sandbox/mau/
+
+# ─── Khung do kiem noi bo ─────────────────────────────────────────────
+# Chua ban thao that cua nguoi dung va ban bien dich cua ma nguon rieng,
+# nen KHONG day len repo cong khai.
+p0/
+
+# ─── Rac he dieu hanh / IDE ───────────────────────────────────────────
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+*.log

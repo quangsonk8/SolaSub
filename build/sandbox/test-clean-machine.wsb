@@ -1,0 +1,42 @@
+<Configuration>
+  <!--
+    Chay thu SolaSub tren mot ban Windows SACH (Windows Sandbox).
+    Trong do khong co Python, khong co VC++ Redistributable, khong co gi het —
+    dung bang may client that.
+
+    Can bat tinh nang truoc (mo PowerShell bang quyen Admin, roi khoi dong lai):
+        Enable-WindowsOptionalFeature -Online -FeatureName "Containers-DisposableClientVM" -All
+
+    Chay:  nhay doi vao file .wsb nay.
+    Ket qua ghi ra:  <du an>\build\sandbox\ketqua\
+
+    QUAN TRONG: Windows Sandbox CHI nhan duong dan tuyet doi, khong co bien.
+    Neu ban dat du an o cho khac D:\SolaTTS\SolaSub thi phai sua 2 duong dan
+    <HostFolder> ben duoi cho khop.
+
+    Muon thu ca buoc can chinh that thi dat mot cap file mau ten short.mp3 va
+    short.txt (van ban goc cua chinh doan audio do) vao build\sandbox\mau\.
+    Khong co thi kich ban tu bo qua buoc do.
+  -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\SolaTTS\SolaSub\installer\Output</HostFolder>
+      <SandboxFolder>C:\bocai</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>D:\SolaTTS\SolaSub\build\sandbox</HostFolder>
+      <SandboxFolder>C:\kichban</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\kichban\chay-test.ps1</Command>
+  </LogonCommand>
+
+  <!-- 8 GB de du cho ban GPU neu muon thu ca CUDA -->
+  <MemoryInMB>8192</MemoryInMB>
+  <Networking>Enable</Networking>
+  <vGPU>Disable</vGPU>
+</Configuration>
