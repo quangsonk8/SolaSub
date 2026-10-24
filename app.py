@@ -33,21 +33,38 @@ if sys.stderr is None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 import argparse          # noqa: E402
-import io                # noqa: E402
 import os                # noqa: E402
 
+# Bao tung buoc cho man hinh khoi dong cua SolaSub.exe (chi in khi chay qua launcher).
+from solasub import splash  # noqa: E402
+
+splash.status("Đang chuẩn bị công cụ âm thanh…")
 from solasub.paths import (ensure_ffmpeg_on_path,          # noqa: E402
-                           hide_subprocess_windows)
+                           hide_subprocess_windows, resource)
 
 # whisper goi thang "ffmpeg" tu PATH; may nguoi dung thuong khong co nen phai
 # tro vao ban di kem TRUOC khi bat ky thu vien nao chay.
 ensure_ffmpeg_on_path()
 hide_subprocess_windows()
 
-from PyQt6.QtCore import QUrl          # noqa: E402
-from PyQt6.QtWidgets import QApplication  # noqa: E402
+splash.status("Đang nạp giao diện (Qt)…")
+from PyQt6.QtCore import QTimer, QUrl              # noqa: E402
+from PyQt6.QtGui import QFontDatabase              # noqa: E402
+from PyQt6.QtWidgets import QApplication           # noqa: E402
 
+splash.status("Đang nạp trình phát âm thanh và bảng phụ đề…")
 from solasub.ui.main_window import MainWindow  # noqa: E402
+
+
+def load_fonts():
+    """
+    Font Inter 4.1 di kem (assets/fonts). Theme khai bao 'Inter' nhung truoc day KHONG dong goi font ->
+    may khong cai Inter hien Segoe UI. Nap cho rieng app, khong cai vao he thong.
+    """
+    for name in ("Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf"):
+        p = resource("assets", "fonts", name)
+        if p:
+            QFontDatabase.addApplicationFont(p)
 
 
 def main():
@@ -69,10 +86,12 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("SolaSub")
+    load_fonts()
     from solasub.ui.icon import app_icon
     _ic = app_icon()
     if _ic:
         app.setWindowIcon(_ic)
+    splash.status("Đang dựng cửa sổ…")
     w = MainWindow()
 
     # Mo san file neu duoc truyen vao — tien khi thu nghiem
@@ -81,7 +100,8 @@ def main():
         w.btn_audio.setText(os.path.basename(args.audio))
         w.player.setSource(QUrl.fromLocalFile(os.path.abspath(args.audio)))
     if args.text and os.path.exists(args.text):
-        w.raw_text = io.open(args.text, encoding="utf-8-sig").read()
+        from solasub.textio import load_text
+        w.raw_text = load_text(args.text)
         w.text_path = args.text
         w.btn_text.setText(os.path.basename(args.text))
         w.text_view.setPlainText(w.raw_text)
@@ -92,6 +112,11 @@ def main():
     w._update_ready()
 
     w.show()
+    w.raise_()
+    w.activateWindow()
+    # Bao READY sau khi vong lap su kien chay va cua so da ve xong khung dau -> man hinh khoi dong
+    # tat dung luc cua so chinh hien, khong bi khoang trong o giua.
+    QTimer.singleShot(150, splash.ready)
     sys.exit(app.exec())
 
 

@@ -5,17 +5,19 @@ from PyQt6.QtWidgets import (QAbstractItemView, QDialog, QHBoxLayout, QLabel,
                              QPushButton, QVBoxLayout)
 
 from ..languages import all_languages
-from .theme import STYLE
+from . import theme
 
 
 class LanguageDialog(QDialog):
     def __init__(self, selected, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Cấu hình ngôn ngữ")
-        self.setStyleSheet(STYLE)
-        self.resize(430, 560)
+        # Mau lay tu stylesheet cua QApplication (theme.apply) -> tu doi theo che do sang/toi
+        self.resize(440, 580)
 
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 16)
+        lay.setSpacing(10)
         lay.addWidget(QLabel("Tích những ngôn ngữ bạn hay dùng — chỉ chúng hiện ở ô chọn."))
 
         self.search = QLineEdit()
@@ -27,7 +29,11 @@ class LanguageDialog(QDialog):
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         pinned, rest = all_languages()
         sel = set(selected or [])
-        for code, label in pinned + rest:
+        # Ngon ngu DA CHON len dau (giu thu tu ghim/ABC trong tung nhom). Truoc day xep co dinh -> ngon ngu
+        # da chon ngoai nhom ghim (vd "it — Ý") nam tan duoi, dem "Đã chọn 6" ma chi thay 5 o tick.
+        everything = pinned + rest
+        ordered = [x for x in everything if x[0] in sel] + [x for x in everything if x[0] not in sel]
+        for code, label in ordered:
             it = QListWidgetItem(label)
             it.setData(Qt.ItemDataRole.UserRole, code)
             it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -50,6 +56,10 @@ class LanguageDialog(QDialog):
         b_ok = QPushButton("Lưu"); b_ok.setObjectName("primary"); b_ok.clicked.connect(self.accept)
         row.addWidget(b_cancel); row.addWidget(b_ok)
         lay.addLayout(row)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        theme.set_title_bar_dark(self, theme.palette()["name"] == "dark")
 
     def _filter(self, text):
         t = (text or "").strip().lower()

@@ -18,6 +18,7 @@ DEFAULTS = {
     "model": "base",                                # khong bay ra UI — sua tay neu can
     "last_audio_dir": "",
     "last_text_dir": "",
+    "theme": "system",                              # system (theo Windows) | dark | light
 }
 
 
@@ -25,7 +26,9 @@ def load() -> dict:
     cfg = dict(DEFAULTS)
     try:
         if os.path.exists(PATH):
-            data = json.load(io.open(PATH, encoding="utf-8"))
+            # utf-8-sig: doc duoc ca file co BOM (Notepad cu / PowerShell 5.1 hay them). "utf-8" thuong gap BOM
+            # la json loi -> roi xuong except -> MAT SACH cai dat ma khong bao gi.
+            data = json.load(io.open(PATH, encoding="utf-8-sig"))
             if isinstance(data, dict):
                 cfg.update({k: v for k, v in data.items() if k in DEFAULTS})
     except Exception:

@@ -1,7 +1,32 @@
 """
-Danh sach ngon ngu — lay THANG tu whisper.tokenizer thay vi go tay,
-nen nang cap thu vien la tu co them ngon ngu moi, khong phai sua code.
+Danh sach ngon ngu cho o chon ngon ngu — bang tinh san (LANGUAGES ben duoi), KHONG nap whisper/torch.
 """
+
+# Chep tu whisper.tokenizer.LANGUAGES (openai-whisper 20250625, 100 ngon ngu).
+# KHONG import whisper luc mo app: goi whisper keo theo ca PyTorch (~3 giay, lan dau sau khi bat may con
+# lau hon nhieu) chi de lay danh sach nay. Nang cap whisper thi chay lai build/gen_languages.py.
+LANGUAGES = {
+    "en": "english", "zh": "chinese", "de": "german", "es": "spanish", "ru": "russian",
+    "ko": "korean", "fr": "french", "ja": "japanese", "pt": "portuguese", "tr": "turkish",
+    "pl": "polish", "ca": "catalan", "nl": "dutch", "ar": "arabic", "sv": "swedish",
+    "it": "italian", "id": "indonesian", "hi": "hindi", "fi": "finnish", "vi": "vietnamese",
+    "he": "hebrew", "uk": "ukrainian", "el": "greek", "ms": "malay", "cs": "czech",
+    "ro": "romanian", "da": "danish", "hu": "hungarian", "ta": "tamil", "no": "norwegian",
+    "th": "thai", "ur": "urdu", "hr": "croatian", "bg": "bulgarian", "lt": "lithuanian",
+    "la": "latin", "mi": "maori", "ml": "malayalam", "cy": "welsh", "sk": "slovak",
+    "te": "telugu", "fa": "persian", "lv": "latvian", "bn": "bengali", "sr": "serbian",
+    "az": "azerbaijani", "sl": "slovenian", "kn": "kannada", "et": "estonian", "mk": "macedonian",
+    "br": "breton", "eu": "basque", "is": "icelandic", "hy": "armenian", "ne": "nepali",
+    "mn": "mongolian", "bs": "bosnian", "kk": "kazakh", "sq": "albanian", "sw": "swahili",
+    "gl": "galician", "mr": "marathi", "pa": "punjabi", "si": "sinhala", "km": "khmer",
+    "sn": "shona", "yo": "yoruba", "so": "somali", "af": "afrikaans", "oc": "occitan",
+    "ka": "georgian", "be": "belarusian", "tg": "tajik", "sd": "sindhi", "gu": "gujarati",
+    "am": "amharic", "yi": "yiddish", "lo": "lao", "uz": "uzbek", "fo": "faroese",
+    "ht": "haitian creole", "ps": "pashto", "tk": "turkmen", "nn": "nynorsk", "mt": "maltese",
+    "sa": "sanskrit", "lb": "luxembourgish", "my": "myanmar", "bo": "tibetan", "tl": "tagalog",
+    "mg": "malagasy", "as": "assamese", "tt": "tatar", "haw": "hawaiian", "ln": "lingala",
+    "ha": "hausa", "ba": "bashkir", "jw": "javanese", "su": "sundanese", "yue": "cantonese",
+}
 
 # Nhung thu tieng hay dung nhat — ghim len dau danh sach.
 PINNED = ["ja", "vi", "en", "zh", "ko"]
@@ -18,11 +43,6 @@ VI_NAMES = {
 
 def all_languages():
     """[(ma, nhan hien thi)] — ghim truoc, phan con lai xep theo ten."""
-    try:
-        from whisper.tokenizer import LANGUAGES
-    except Exception:
-        LANGUAGES = {c: c for c in PINNED}
-
     def label(code):
         en = LANGUAGES.get(code, code).title()
         vi = VI_NAMES.get(code)

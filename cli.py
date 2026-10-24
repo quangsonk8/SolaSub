@@ -19,19 +19,20 @@ from solasub.align import load_model, align_words, build_cues  # noqa: E402
 from solasub.problems import detect
 from solasub.srt import audio_duration, write_srt
 from solasub.subtitle import normalize
+from solasub.textio import load_text
 
 
 def main():
     ap = argparse.ArgumentParser(description="Tao phu de bang forced alignment")
     ap.add_argument("--audio", required=True)
-    ap.add_argument("--text", required=True, help="File van ban goc (.txt, UTF-8)")
+    ap.add_argument("--text", required=True, help="File van ban goc (.txt / .md / Word .docx)")
     ap.add_argument("--lang", default="ja")
     ap.add_argument("--model", default="base")
     ap.add_argument("--device", default=None, help="cuda | cpu (mac dinh: tu chon)")
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
-    raw = io.open(args.text, encoding="utf-8").read()
+    raw = load_text(args.text)
     text = normalize(raw)
     dur = audio_duration(args.audio)
     print(f"[audio] {dur:.1f}s ({dur/60:.1f} phut) | van ban {len(text)} ky tu")

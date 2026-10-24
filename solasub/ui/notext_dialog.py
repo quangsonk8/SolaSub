@@ -8,7 +8,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QComboBox, QDialog, QHBoxLayout, QLabel,
                              QPushButton, QVBoxLayout)
 
-from .theme import STYLE
+from . import theme
 
 MODELS = [
     ("base", "base — nhanh nhất, chữ sai nhiều (139 MB)"),
@@ -24,15 +24,16 @@ class NoTextDialog(QDialog):
     def __init__(self, current_model="base", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Chưa có văn bản gốc")
-        self.setStyleSheet(STYLE)
-        self.setMinimumWidth(560)
+        # Mau lay tu stylesheet cua QApplication (theme.apply) -> tu doi theo che do sang/toi
+        self.setMinimumWidth(580)
 
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(20, 18, 20, 18)
         lay.setSpacing(12)
 
         title = QLabel("Bạn chưa chọn văn bản gốc — tool sẽ tự nghe và gõ lại lời thoại.")
         title.setWordWrap(True)
-        title.setStyleSheet("font-size: 14px; font-weight: 600; color: #fbbf24;")
+        title.setObjectName("warnTitle")
         lay.addWidget(title)
 
         body = QLabel(
@@ -77,6 +78,10 @@ class NoTextDialog(QDialog):
         btns.addWidget(b_cancel)
         btns.addWidget(b_ok)
         lay.addLayout(btns)
+
+    def showEvent(self, ev):
+        super().showEvent(ev)
+        theme.set_title_bar_dark(self, theme.palette()["name"] == "dark")
 
     def model_name(self):
         return self.cb.currentData() or "base"

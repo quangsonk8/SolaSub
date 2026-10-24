@@ -69,7 +69,7 @@ New-Item -ItemType Directory -Force -Path "$Out\tools", "$Out\models" | Out-Null
 # Lay ffmpeg.exe tu tools\ cua du an, khong co thi lay ban dang trong PATH
 $ff = if (Test-Path "$Root\tools\ffmpeg.exe") { "$Root\tools\ffmpeg.exe" }
       else { (Get-Command ffmpeg -EA SilentlyContinue).Source }
-if (-not $ff) { throw "Khong tim thay ffmpeg.exe — dat vao $Root\tools\ hoac them vao PATH" }
+if (-not $ff) { throw "Khong tim thay ffmpeg.exe - dat vao $Root\tools\ hoac them vao PATH" }
 Copy-Item $ff "$Out\tools\ffmpeg.exe" -Force
 # Dong goi san base.pt de lan chay dau khong phai tai 139 MB
 Copy-Item "$env:USERPROFILE\.cache\whisper\base.pt" "$Out\models\base.pt" -Force
@@ -98,12 +98,14 @@ if (Test-Path "$env:WINDIR\System32\vcomp140.dll") {
     Copy-Item "$env:WINDIR\System32\vcomp140.dll" "$Py\vcomp140.dll" -Force
 }
 
-# --- 5b. SolaSub.exe: launcher nho goi pythonw.exe app.py ---
+# --- 5b. SolaSub.exe: launcher (man hinh khoi dong + goi pythonw.exe app.py) ---
+# /codepage:65001: launcher.cs co chu tieng Viet, luu UTF-8 khong BOM -> thieu co nay csc doc theo ANSI.
 Say "5b/7 Build SolaSub.exe..."
 $csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
-& $csc /nologo /target:winexe /optimize+ /win32icon:"$Root\assets\solasub.ico" `
-       /reference:System.Windows.Forms.dll `
-       /out:"$Out\SolaSub.exe" "$Build\launcher.cs" | Out-Null
+& $csc /nologo /target:winexe /optimize+ /platform:anycpu /codepage:65001 /win32icon:"$Root\assets\solasub.ico" `
+       /reference:System.Windows.Forms.dll /reference:System.Drawing.dll `
+       /out:"$Out\SolaSub.exe" "$Build\launcher.cs"
+if ($LASTEXITCODE -ne 0) { throw "csc loi khi build launcher" }
 if (-not (Test-Path "$Out\SolaSub.exe")) { throw "Build launcher that bai" }
 
 # --- 6. Cat bot thu khong dung (~120 MB) ---
@@ -128,6 +130,15 @@ Get-ChildItem "$SitePkg\PyQt6" -Filter "*.pyd" |
     Where-Object { $_.BaseName -notmatch '^(QtCore|QtGui|QtWidgets|QtMultimedia|QtNetwork|sip)' } |
     Remove-Item -Force -EA SilentlyContinue
 Remove-Item "$SitePkg\torch\include", "$SitePkg\torch\test" -Recurse -Force -EA SilentlyContinue
+
+# --- 6b. Bien dich san .pyc ---
+# Python nhung chay theo ._pth thi KHONG BAO GIO ghi .pyc (sys.dont_write_bytecode = True) -> moi lan mo app
+# phai bien dich lai ~1.000 file .py tu dau (do duoc 1,5 giay luc may "am", lan dau sau khi bat may lau hon
+# nhieu; ca luc bam can chinh lan dau cung vay vi torch nap tu nguon).
+# unchecked-hash: Python dung thang .pyc, khong so thoi gian sua file -> trinh cai chep lam doi gio van dung duoc.
+# Mot vai file test trong site-packages bien dich loi (cu phap cu) -> compileall tra ma loi, bo qua.
+Say "6b/7 Bien dich san .pyc..."
+& "$Py\python.exe" -m compileall -q -j 0 --invalidation-mode unchecked-hash "$Out\solasub" "$SitePkg" | Out-Null
 
 # --- 7. Script nang cap GPU (chay sau khi cai, neu may co NVIDIA) ---
 Say "7/7  Tao script GPU..."

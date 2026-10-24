@@ -41,6 +41,7 @@ Vì chữ chắc chắn đúng, SolaSub chỉ khoanh đỏ vài chỗ đáng ng�
 ## Tính năng
 
 - **Chữ đúng 100%** — lấy thẳng từ kịch bản của bạn, không qua nhận dạng
+- **Kịch bản dạng .txt hoặc Word .docx** — với Word, tự bỏ chữ phiên âm furigana, chữ đã xoá khi theo dõi thay đổi và khung văn bản trùng lặp
 - **Khung đối chiếu** — bảng phụ đề bên trái, bản gốc bên phải, chọn dòng nào thì bản gốc tô sáng dòng đó
 - **Nghe thử từng dòng** — bấm là audio nhảy đúng đoạn và tự dừng ở cuối dòng
 - **Nhích thời gian** — nút −0,1s / +0,1s, hoặc gõ thẳng mốc giờ
@@ -49,6 +50,8 @@ Vì chữ chắc chắn đúng, SolaSub chỉ khoanh đỏ vài chỗ đáng ng�
 - **Hiểu tiếng Nhật/Trung** — áp dụng cấm ngắt dòng (禁則処理), không cắt giữa từ, không bỏ trợ từ lạc sang dòng sau
 - **100 ngôn ngữ** — lấy thẳng từ Whisper; tự chọn những thứ tiếng hay dùng để hiện trong ô chọn
 - **Không có kịch bản vẫn chạy được** — chuyển sang chế độ phiên âm, kèm cảnh báo rõ chất lượng khác thế nào
+- **Chế độ sáng / tối** — lần đầu theo cài đặt Windows, bấm nút góc trên để đổi, app tự nhớ
+- **Mở nhanh, có màn hình khởi động** — hiện ngay khi bấm, báo đang nạp gì; bấm thêm lần nữa không mở bản thứ hai
 
 ## Tải về
 
@@ -56,8 +59,8 @@ Hai bản ở trang [Releases](../../releases/latest). Cùng một phần mềm,
 
 | Bản | Dung lượng | Dùng khi |
 |---|---|---|
-| **SolaSub_Setup_CPU.exe** | 296 MB (cài ra ~1 GB) | Máy không có card NVIDIA |
-| **SolaSub_Setup_GPU.exe** | 296 MB + tải thêm ~2,4 GB | Máy có card NVIDIA |
+| **SolaSub_Setup_CPU.exe** | 330 MB (cài ra ~1,2 GB) | Máy không có card NVIDIA |
+| **SolaSub_Setup_GPU.exe** | 330 MB + tải thêm ~2,4 GB | Máy có card NVIDIA |
 
 Bản GPU **không đóng gói sẵn CUDA**. Ở bước cuối của trình cài có một ô tick để tải gói tăng tốc về — tick thì tải, không tick thì vẫn chạy bằng CPU bình thường. Làm vậy để người không có card NVIDIA khỏi phải tải thừa 2,4 GB.
 
@@ -68,7 +71,7 @@ Cài **theo từng người dùng**, không cần quyền quản trị, vào `%L
 ### Yêu cầu
 
 - Windows 10 phiên bản 1703 trở lên, hoặc Windows 11 (64-bit)
-- 1 GB đĩa trống (bản CPU) hoặc 4,5 GB (bản GPU có CUDA)
+- 1,2 GB đĩa trống (bản CPU) hoặc 4,7 GB (bản GPU có CUDA)
 - **Không** cần cài Python, ffmpeg hay Visual C++ Redistributable — tất cả nằm trong bộ cài
 
 Đã kiểm chứng trên Windows Sandbox sạch hoàn toàn: không Python, không ffmpeg, không VC++ Redist. Cài 49 giây, chạy được ngay.
@@ -147,6 +150,9 @@ Vài chi tiết đã trả giá mới biết, đều ghi rõ trong `build\build.
 - `python311._pth` phải có dòng `..`, không thì `ModuleNotFoundError: No module named 'solasub'`.
 - `ffmpeg` phải được chèn vào `PATH` **trước mọi import**, vì Whisper gọi thẳng chuỗi `"ffmpeg"` qua `subprocess`.
 - Chạy bằng `pythonw.exe` thì `sys.stdout` là `None`; thanh tiến độ `tqdm` trong stable-ts sẽ gây `AttributeError`. `app.py` thay bằng bộ ghi rỗng ngay đầu file.
+- Python nhúng (chạy theo `._pth`) **không bao giờ tự ghi `.pyc`**, nên mỗi lần mở app phải biên dịch lại hơn 1.000 file. `build.ps1` biên dịch sẵn (`compileall --invalidation-mode unchecked-hash`) và bộ cài giữ lại `__pycache__`. Hệ quả: sửa file `.py` trong bản đã cài sẽ không có tác dụng cho tới khi biên dịch lại.
+- Lúc mở app **không được import `whisper`**: nó kéo theo cả PyTorch (vài giây). Danh sách ngôn ngữ vì vậy được chép sẵn vào `solasub/languages.py`; nâng cấp Whisper thì chạy `build\gen_languages.py`.
+- `SolaSub.exe` (`build\launcher.cs`) hiện màn hình khởi động trước khi Python chạy, nhận trạng thái qua stdout của `app.py` (`@@STATUS …`, `@@READY`). Biên dịch bằng `csc.exe` của .NET Framework 4 nên chỉ dùng cú pháp C# 5.
 
 Thư mục `build\sandbox\` có sẵn cấu hình Windows Sandbox để thử bộ cài trên một bản Windows sạch — tự cài, thử nạp thư viện, chạy căn chỉnh thật rồi chụp màn hình giao diện.
 
