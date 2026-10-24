@@ -75,6 +75,14 @@ Name: "desktopicon"; Description: "Tạo lối tắt ngoài màn hình"; GroupDe
 Name: "cuda"; Description: "Tải gói tăng tốc CUDA ngay bây giờ — tải ~2,4 GB, chiếm thêm ~3,5 GB đĩa"; GroupDescription: "Tăng tốc GPU (cần card NVIDIA + mạng):"
 #endif
 
+[InstallDelete]
+; CAI DE len ban da co torch CUDA (nguoi da tai goi GPU): [Files] chep torch CPU de len nhung KHONG xoa file
+; chi CUDA moi co (torch_cuda.dll...). torch/__init__.py nap MOI *.dll trong torch\lib -> nap lan DLL CUDA cu
+; voi torch_cpu.dll moi -> loi khi can chinh; con 2 bo dist-info (+cpu va +cu126). Xoa sach torch cu truoc:
+; ban CPU ra torch CPU sach; ban GPU (tick CUDA) tai lai CUDA sach o buoc [Run].
+Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch"
+Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch-*.dist-info"
+
 [Files]
 ; KHONG loai __pycache__: build.ps1 da bien dich san .pyc (Python nhung khong tu ghi .pyc ->
 ; thieu thi moi lan mo app phai bien dich lai ~1.000 file, cham vai giay).
@@ -117,9 +125,42 @@ Type: filesandordirs; Name: "{app}\solasub\__pycache__"
 Type: filesandordirs; Name: "{app}\solasub\ui\__pycache__"
 
 [Code]
+// Ban dang cai (neu co) da tai goi GPU chua: torch CUDA moi co torch_cuda.dll.
+// Goi luc con o cac trang wizard -> torch cu chua bi [InstallDelete] xoa.
+function PrevHasCuda: Boolean;
+begin
+  Result := FileExists(AddBackslash(WizardDirValue) + 'python\Lib\site-packages\torch\lib\torch_cuda.dll');
+end;
+
 #ifdef GPU
 var
   WarnedNoNvidia: Boolean;
+
+// Dang dung CUDA ma bo tick "Tai goi CUDA" -> sau khi cai se chay bang CPU (torch cu bi xoa de tranh lan file).
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpSelectTasks) and PrevHasCuda and (not WizardIsTaskSelected('cuda')) then
+    Result := SuppressibleMsgBox('Máy này đang dùng gói tăng tốc GPU (CUDA).' + #13#10#13#10 +
+                     'Bạn đã bỏ tick "Tải gói tăng tốc CUDA" — sau khi cài, SolaSub sẽ chạy bằng CPU ' +
+                     '(chậm hơn). Muốn giữ tăng tốc thì bấm No rồi tick lại mục đó.' + #13#10#13#10 +
+                     'Vẫn tiếp tục chạy bằng CPU?', mbConfirmation, MB_YESNO, IDYES) = IDYES;
+end;
+#else
+// SuppressibleMsgBox: Inno van goi NextButtonClick khi cai im lang; /SUPPRESSMSGBOXES -> tu chon Yes.
+// Bo cai CPU de len ban dang dung CUDA -> ve ban CPU (sach). Bao truoc, goi y dung bo cai GPU.
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if (CurPageID = wpReady) and PrevHasCuda then
+    Result := SuppressibleMsgBox('Máy này đang dùng gói tăng tốc GPU (CUDA).' + #13#10#13#10 +
+                     'Đây là bộ cài bản CPU: cài xong SolaSub sẽ chạy bằng CPU (chậm hơn).' + #13#10 +
+                     'Muốn giữ tăng tốc GPU, hãy bấm No và dùng SolaSub_Setup_GPU.exe.' + #13#10#13#10 +
+                     'Vẫn cài bản CPU?', mbConfirmation, MB_YESNO, IDYES) = IDYES;
+end;
+#endif
+
+#ifdef GPU
 
 // Driver NVIDIA cai vao la co nvidia-smi.exe trong System32. Khong co file do
 // thi gan nhu chac chan may khong dung duoc CUDA.
@@ -133,11 +174,11 @@ begin
   if (CurPageID = wpSelectTasks) and (not WarnedNoNvidia) and (not HasNvidia) then
   begin
     WarnedNoNvidia := True;
-    MsgBox('Không tìm thấy driver NVIDIA trên máy này.' + #13#10#13#10 +
+    SuppressibleMsgBox('Không tìm thấy driver NVIDIA trên máy này.' + #13#10#13#10 +
            'Gói tăng tốc CUDA sẽ không dùng được — bạn nên bỏ tick mục ' +
            '"Tải gói tăng tốc CUDA" để khỏi tải thừa 2,5 GB.' + #13#10#13#10 +
            'SolaSub vẫn chạy bình thường bằng CPU.',
-           mbInformation, MB_OK);
+           mbInformation, MB_OK, IDOK);
   end;
 end;
 #endif

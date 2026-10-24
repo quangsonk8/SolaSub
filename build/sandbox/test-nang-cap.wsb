@@ -1,0 +1,27 @@
+<Configuration>
+  <!--
+    Thu CAI DE len mot ban da tai goi CUDA (gia lap, khong tai 2,4 GB).
+    Kich ban: build\sandbox\test-nang-cap.ps1. Ket qua: build\sandbox\ketqua-nangcap\
+    Duong dan tuyet doi - doi cho du an thi sua 2 HostFolder.
+  -->
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\SolaTTS\SolaSub\installer\Output</HostFolder>
+      <SandboxFolder>C:\bocai</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+    <MappedFolder>
+      <HostFolder>D:\SolaTTS\SolaSub\build\sandbox</HostFolder>
+      <SandboxFolder>C:\kichban</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+
+  <LogonCommand>
+    <Command>powershell.exe -ExecutionPolicy Bypass -NoProfile -File C:\kichban\test-nang-cap.ps1</Command>
+  </LogonCommand>
+
+  <MemoryInMB>8192</MemoryInMB>
+  <Networking>Enable</Networking>
+  <vGPU>Disable</vGPU>
+</Configuration>

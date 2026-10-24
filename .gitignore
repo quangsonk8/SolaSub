@@ -11,6 +11,7 @@ build/SolaSub/
 build/py-embed.zip
 build/get-pip.py
 build/sandbox/ketqua/
+build/sandbox/ketqua-nangcap/
 installer/Output/
 installer/_tmpout*/
 

@@ -66,6 +66,8 @@ Bản GPU **không đóng gói sẵn CUDA**. Ở bước cuối của trình cà
 
 Cài **theo từng người dùng**, không cần quyền quản trị, vào `%LocalAppData%\Programs\SolaSub`.
 
+**Nâng cấp:** cứ cài đè bản mới lên, không cần gỡ bản cũ, cài đặt vẫn giữ nguyên. Nếu đã tải gói CUDA thì dùng lại bộ cài GPU và giữ tick tải CUDA: bộ cài xoá sạch PyTorch cũ trước khi cài (để không lẫn file CUDA cũ với bản mới) nên phải tải lại gói đó.
+
 > **SmartScreen sẽ cảnh báo** "Windows protected your PC" vì bộ cài chưa ký số. Bấm *More info* → *Run anyway*.
 
 ### Yêu cầu
