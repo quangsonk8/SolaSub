@@ -6,7 +6,7 @@
 ; card NVIDIA, dong vao thi ai cung phai tai thua 2,5 GB.
 
 #define MyAppName      "SolaSub"
-#define MyAppVersion   "1.1.0"
+#define MyAppVersion   "1.1.1"
 #define MyAppPublisher "SOLATECH"
 #define MyAppExeName   "SolaSub.exe"
 #define SrcDir         "..\build\SolaSub"

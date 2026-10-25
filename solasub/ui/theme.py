@@ -100,6 +100,7 @@ def build_style(p: dict) -> str:
     grad_hover = (f"qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4b8ff7, "
                   f"stop:0.55 #5b53ea, stop:1 #8a4df0)")
     check = _check_svg()
+    chevron = _chevron_svg(p['text2'])
     return f"""
 * {{ font-family: 'Inter','Segoe UI',sans-serif; font-size: 12.5px; color: {p['text']}; outline: none; }}
 /* THU TU QUAN TRONG: cung do uu tien thi quy tac DUNG SAU thang. 'QWidget' khop ca QMainWindow/QDialog,
@@ -168,6 +169,8 @@ QComboBox#chipCombo {{ padding: 3px 8px; min-height: 16px; }}
 QComboBox:hover, QLineEdit:hover {{ border-color: {p['accent']}; }}
 QComboBox:focus, QLineEdit:focus {{ border-color: {p['accent']}; }}
 QComboBox::drop-down {{ border: none; width: 24px; }}
+QComboBox::down-arrow {{ image: url({chevron}); width: 14px; height: 14px; }}
+QComboBox::down-arrow:on {{ top: 1px; }}
 QComboBox QAbstractItemView {{ background: {p['surface']}; border: 1px solid {p['border2']};
                                selection-background-color: {p['select']}; selection-color: {p['select_text']};
                                outline: none; padding: 4px; }}
@@ -239,25 +242,38 @@ QLabel#emptyStep {{ color: {p['text']}; font-size: 13px; }}
 """
 
 
-def _check_svg() -> str:
+def _ui_svg(name: str, path_d: str, color: str, stroke: float) -> str:
     """
-    Dau tick trang cho o duoc chon. Tu tao kieu cho o tick (::indicator) la Qt BO LUON dau tick mac dinh ->
-    o da tick chi con o vuong to mau. Ghi 1 file SVG nho (plugin qsvg co san trong ban dong goi).
+    Ghi 1 file SVG nho (1 net ve) cho stylesheet (plugin qsvg co san trong ban dong goi).
+    Ten file kem ma mau -> moi che do sang/toi mot file rieng.
     Tra ve duong dan dung dau '/' (stylesheet khong nhan '\\').
     """
     import tempfile
     d = os.path.join(tempfile.gettempdir(), "SolaSub-ui")
-    p = os.path.join(d, "check.svg")
+    p = os.path.join(d, f"{name}-{color.lstrip('#')}.svg")
     if not os.path.exists(p):
         try:
             os.makedirs(d, exist_ok=True)
             with open(p, "w", encoding="utf-8") as f:
                 f.write('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">'
-                        '<path d="M3.6 8.4 6.6 11.3 12.4 4.9" fill="none" stroke="#ffffff" stroke-width="2.1" '
+                        f'<path d="{path_d}" fill="none" stroke="{color}" stroke-width="{stroke}" '
                         'stroke-linecap="round" stroke-linejoin="round"/></svg>')
         except OSError:
             return ""
     return p.replace("\\", "/")
+
+
+def _check_svg() -> str:
+    """
+    Dau tick trang cho o duoc chon. Tu tao kieu cho o tick (::indicator) la Qt BO LUON dau tick mac dinh ->
+    o da tick chi con o vuong to mau.
+    """
+    return _ui_svg("check", "M3.6 8.4 6.6 11.3 12.4 4.9", "#ffffff", 2.1)
+
+
+def _chevron_svg(color: str) -> str:
+    """Mui ten combobox. Tu tao kieu cho ::drop-down la Qt BO LUON mui ten mac dinh (giong dau tick o tren)."""
+    return _ui_svg("chevron", "M4.5 6.2 8 9.7 11.5 6.2", color, 1.7)
 
 
 def apply(app, mode: str) -> dict:
