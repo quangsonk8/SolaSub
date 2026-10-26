@@ -69,7 +69,16 @@ if (-not $setup) { Ghi "!! Khong thay bo cai"; "LOI" | Set-Content "$Out\XONG.tx
 Ghi ""
 Ghi "1/6  Cai im lang ($([math]::Round($setup.Length/1MB,0)) MB)..."
 $t0 = Get-Date
-$p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NOICONS","/TASKS=`"`"" -Wait -PassThru
+# Sandbox ban moi BAT Smart App Control: bo cai chua ky so + chua co "uy tin" bi chan ngay, khong chay duoc
+# -> ghi ro ly do (truoc day chi thay "exit=" rong).
+$sac = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -EA SilentlyContinue).VerifiedAndReputablePolicyState
+try {
+    $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NOICONS","/TASKS=`"`"" -Wait -PassThru -ErrorAction Stop
+} catch {
+    Ghi "     !! Windows chan bo cai: $($_.Exception.Message)"
+    if ($sac -eq 1) { Ghi "     (Smart App Control dang BAT trong sandbox - chan file .exe chua ky so. Khong phai loi bo cai.)" }
+    "LOI" | Set-Content "$Out\XONG.txt"; exit 1
+}
 Ghi "     exit=$($p.ExitCode)  mat $([int]((Get-Date)-$t0).TotalSeconds)s  SolaSub.exe=$(Test-Path $Exe)"
 if (-not (Test-Path $Exe)) { Ghi "!! CAI THAT BAI"; "LOI" | Set-Content "$Out\XONG.txt"; exit 1 }
 $pyc = @(Get-ChildItem $App -Recurse -Filter *.pyc -EA SilentlyContinue).Count

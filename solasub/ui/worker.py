@@ -51,7 +51,7 @@ class AlignWorker(QThread):
                 self.progress.emit(
                     f"Đang căn chỉnh ({dur/60:.0f} phút audio, {cls._device})… "
                     f"khoảng {max(5, int(dur/200))}s")
-                stream = align_words(cls._model, self.audio, text, self.lang)
+                stream = align_words(cls._model, self.audio, text, self.lang, status=self.progress.emit)
 
             self.progress.emit("Đang chia cue và áp luật phụ đề…")
             cues = build_cues(stream, text, dur)
