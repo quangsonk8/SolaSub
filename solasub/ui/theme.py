@@ -312,6 +312,7 @@ G_PLAY = ""
 G_PAUSE = ""
 G_SAVE = ""        # Save
 G_RUN = ""         # LightningBolt
+G_NEW = ""         # Refresh — làm mới phiên
 G_FILTER = ""
 G_SUN = ""         # Brightness
 G_MOON = ""        # QuietHours

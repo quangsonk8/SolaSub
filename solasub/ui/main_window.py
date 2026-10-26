@@ -157,6 +157,7 @@ class MainWindow(QMainWindow):
         self.text_path = None
         self.raw_text = ""
         self.cues = []
+        self._dirty = False       # co ket qua / chinh sua CHUA xuat SRT -> hoi truoc khi xoa
         self.duration = 0.0
         self.worker = None
         self._stop_at = None
@@ -261,6 +262,15 @@ class MainWindow(QMainWindow):
         lay.addWidget(lang, 0)
 
         lay.addSpacing(6)
+        self.btn_new = QPushButton("Làm mới")
+        self.btn_new.setFixedHeight(CHIP_H - 14)
+        self.btn_new.setIconSize(QSize(16, 16))
+        self.btn_new.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_new.setToolTip("Xoá audio, kịch bản và kết quả để làm video tiếp theo (Ctrl+N)")
+        self.btn_new.clicked.connect(self.new_session)
+        self._icon_btn(self.btn_new, theme.G_NEW)
+        lay.addWidget(self.btn_new)
+
         self.btn_run = QPushButton("Chạy căn chỉnh")
         self.btn_run.setObjectName("primary")
         self.btn_run.setEnabled(False)
@@ -454,6 +464,7 @@ class MainWindow(QMainWindow):
             return ""
 
     def _build_shortcuts(self):
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self.new_session)
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.pick_audio)
         QShortcut(QKeySequence("Ctrl+Shift+O"), self, activated=self.pick_text)
         QShortcut(QKeySequence("Ctrl+Return"), self,
@@ -609,38 +620,151 @@ class MainWindow(QMainWindow):
             "Audio/Video (*.mp3 *.wav *.m4a *.mp4 *.mkv);;Tất cả (*.*)")
         if not p:
             return
+        if not self._confirm_discard("chọn audio mới"):
+            return
+        self._reset_result()
         self.cfg["last_audio_dir"] = os.path.dirname(p)
         settings.save(self.cfg)
         self.audio_path = p
         self.btn_audio.setText(os.path.basename(p))
         self.player.setSource(QUrl.fromLocalFile(os.path.abspath(p)))
         self.btn_play.setEnabled(True)   # nghe thu duoc ngay, khong cho align xong
+        self._auto_text_for_audio(p)
         self._update_ready()
 
+    # Kich ban nam CUNG thu muc voi audio thi tu nap. Ly do: nhieu du an dat ten kich ban
+    # giong nhau (kich-ban.txt); chon tay tu "thu muc lan truoc" rat de nham sang du an khac
+    # -> align hong hang loat (304/370 dong) ma nhin vao khong biet vi sao.
+    TEXT_EXT = (".txt", ".docx", ".md")
+
+    def _text_candidates(self, audio):
+        d = os.path.dirname(audio)
+        try:
+            files = [os.path.join(d, f) for f in os.listdir(d)
+                     if f.lower().endswith(self.TEXT_EXT) and not f.startswith(("~$", "."))
+                     and not any(k in f.lower() for k in ("bilingual", "song-ngu", "ghi-chu", "note", "readme", "prompt", "negative"))]
+        except OSError:
+            return []
+        stem = os.path.splitext(os.path.basename(audio))[0].lower()
+
+        def rank(f):
+            n = os.path.splitext(os.path.basename(f))[0].lower()
+            return (
+                0 if n == stem else 1,                               # cung ten voi audio
+                0 if n in ("kich-ban", "kichban", "script") else 1,  # ten kich ban quen dung
+                0 if f.lower().endswith((".txt", ".docx")) else 1,   # .md xep sau
+                1 if len(n) > 3 and n[-3] == "-" and n[-2:].isdigit() else 0,  # kich-ban-01: ban chia nho, de sau
+                -os.path.getsize(f),                                 # ban day du nhat
+            )
+        return sorted(files, key=rank)
+
+    def _auto_text_for_audio(self, audio):
+        d = os.path.normcase(os.path.dirname(os.path.abspath(audio)))
+        if self.text_path and os.path.normcase(os.path.dirname(os.path.abspath(self.text_path))) == d:
+            return                                       # kich ban da cung thu muc -> giu nguyen
+        cands = self._text_candidates(audio)
+        if not cands:
+            if self.text_path:                           # kich ban cu o thu muc KHAC -> bo, tranh lech
+                self._clear_text()
+                self.statusBar().showMessage(
+                    "Kịch bản cũ nằm ở thư mục khác với audio — đã bỏ. Hãy chọn lại văn bản gốc.")
+            return
+        if self._load_text(cands[0], quiet=True):
+            more = (f" (còn {len(cands) - 1} file khác cùng thư mục — bấm ô Văn bản gốc để đổi)"
+                    if len(cands) > 1 else "")
+            self.statusBar().showMessage(
+                f"Đã tự nạp kịch bản cùng thư mục: {os.path.basename(cands[0])}{more}")
+
+    # ================================================================ lam moi
+    def _busy(self):
+        return bool(self.worker and self.worker.isRunning())
+
+    def _confirm_discard(self, action):
+        """Co ket qua chua xuat SRT -> hoi truoc. Tra False neu nguoi dung huy."""
+        if self._busy():
+            QMessageBox.information(self, "Đang căn chỉnh",
+                                    "Đang chạy căn chỉnh — đợi xong rồi hãy " + action + ".")
+            return False
+        if not (self.cues and self._dirty):
+            return True
+        r = QMessageBox.question(
+            self, "Kết quả chưa lưu",
+            f"Phụ đề hiện tại ({len(self.cues)} dòng) chưa được xuất SRT.\n"
+            f"{action[0].upper() + action[1:]} sẽ xoá kết quả này. Tiếp tục?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        return r == QMessageBox.StandardButton.Yes
+
+    def _reset_result(self):
+        """Xoa ket qua can chinh + trang thai trinh phat. Giu nguyen audio/kich ban."""
+        self.player.stop()
+        self._stop_at = None
+        self.cues = []
+        self.duration = 0.0
+        self._dirty = False
+        self.btn_run.setText("Chạy căn chỉnh")
+        self.btn_export.setEnabled(False)
+        self._emphasize_export(False)
+        self.slider.setValue(0)
+        self.lbl_time.setText(ts(0))
+        self.text_view.setExtraSelections([])
+        self.refresh_table()
+
+    def new_session(self):
+        """Lam video tiep theo: xoa sach audio, kich ban, ket qua."""
+        if not self._confirm_discard("làm mới"):
+            return
+        self._reset_result()
+        self.player.setSource(QUrl())
+        self.audio_path = None
+        self.btn_audio.setText(None)
+        self.btn_play.setEnabled(False)
+        self._clear_text()
+        self.btn_run.setEnabled(False)
+        self.statusBar().showMessage("Đã làm mới — chọn audio cho video tiếp theo (Ctrl+O).")
+
+    def _clear_text(self):
+        self.raw_text = ""
+        self.text_path = None
+        self.btn_text.setText(None)                      # về chữ gợi ý ban đầu
+        self.text_view.setPlainText("")
+
     def pick_text(self):
-        p, _ = QFileDialog.getOpenFileName(
-            self, "Chọn văn bản gốc", self.cfg.get("last_text_dir", ""), textio.FILTER)
+        # Mo hop chon ngay tai thu muc cua audio (neu da co), khong phai thu muc lan truoc
+        start = os.path.dirname(self.audio_path) if self.audio_path else self.cfg.get("last_text_dir", "")
+        p, _ = QFileDialog.getOpenFileName(self, "Chọn văn bản gốc", start, textio.FILTER)
         if not p:
+            return
+        if self.cues and not self._confirm_discard("đổi kịch bản"):
             return
         self.cfg["last_text_dir"] = os.path.dirname(p)
         settings.save(self.cfg)
+        self._reset_result()                   # cue cu duoc can theo kich ban cu -> bo
+        self._load_text(p)
+        self._update_ready()
+
+    def _load_text(self, p, quiet=False):
         try:
             text = textio.load_text(p)
         except ValueError as e:
-            QMessageBox.warning(self, "Không đọc được văn bản gốc", str(e))
-            return
+            if not quiet:
+                QMessageBox.warning(self, "Không đọc được văn bản gốc", str(e))
+            return False
         except OSError as e:
-            QMessageBox.warning(self, "Không mở được file", f"{os.path.basename(p)}\n\n{e}")
-            return
+            if not quiet:
+                QMessageBox.warning(self, "Không mở được file", f"{os.path.basename(p)}\n\n{e}")
+            return False
         if not text.strip():
-            QMessageBox.warning(self, "Văn bản gốc trống",
-                                f"Không thấy chữ nào trong {os.path.basename(p)}.")
-            return
+            if not quiet:
+                QMessageBox.warning(self, "Văn bản gốc trống",
+                                    f"Không thấy chữ nào trong {os.path.basename(p)}.")
+            return False
         self.raw_text = text
         self.text_path = p
         self.btn_text.setText(os.path.basename(p))
+        self.btn_text.value.setToolTip(p)                # di chuot vao thay DUONG DAN day du de soat nham thu muc
         self.text_view.setPlainText(self.raw_text)
-        self._update_ready()
+        return True
 
     def _update_ready(self):
         # Chi can AUDIO la chay duoc. Khong co van ban goc thi chuyen sang phien am,
@@ -728,6 +852,9 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         """Luu lua chon truoc khi dong — ke ca khi nguoi dung go tay chu khong chon."""
+        if not self._confirm_discard("đóng SolaSub"):
+            ev.ignore()
+            return
         self.cfg["lang"] = self._lang_code()
         settings.save(self.cfg)
         super().closeEvent(ev)
@@ -742,6 +869,7 @@ class MainWindow(QMainWindow):
 
     def on_done(self, cues, stats, duration):
         self.cues, self.duration = cues, duration
+        self._dirty = True
         self._stop_timer()
         self.progress.hide()
         self.btn_run.setText("Chạy lại")
@@ -834,6 +962,7 @@ class MainWindow(QMainWindow):
         if i is None:
             return
         col = item.column()
+        self._dirty = True
         if col == 5:
             self.cues[i]["text"] = item.text().strip()
         elif col in (2, 3):
@@ -850,6 +979,7 @@ class MainWindow(QMainWindow):
 
     def _set_time(self, i, field, value):
         """Dat moc thoi gian, kep trong gioi han hop le de khong chong lan cue ben canh."""
+        self._dirty = True
         c = self.cues[i]
         lo = self.cues[i - 1]["end"] if i > 0 else 0.0
         hi = self.cues[i + 1]["start"] if i < len(self.cues) - 1 else self.duration
@@ -963,6 +1093,7 @@ class MainWindow(QMainWindow):
         if not p:
             return
         n = write_srt(self.cues, p)
+        self._dirty = False
         self.statusBar().showMessage(f"Đã lưu {n} cue vào {p}")
 
 
