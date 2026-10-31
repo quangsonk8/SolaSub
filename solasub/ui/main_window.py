@@ -30,6 +30,7 @@ from . import theme
 from .icon import app_icon
 from .lang_dialog import LanguageDialog
 from .notext_dialog import NoTextDialog
+from .. import hw
 from .worker import AlignWorker
 
 ISSUE_LABEL = {
@@ -160,6 +161,7 @@ class MainWindow(QMainWindow):
         self._dirty = False       # co ket qua / chinh sua CHUA xuat SRT -> hoi truoc khi xoa
         self.duration = 0.0
         self.worker = None
+        self._skip_close_confirm = False
         self._stop_at = None
         self._seek_to = 0
         self._armed = True
@@ -278,7 +280,7 @@ class MainWindow(QMainWindow):
         self.btn_run.setIconSize(QSize(16, 16))
         self.btn_run.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_run.setToolTip("Căn chỉnh văn bản gốc theo audio (Ctrl+Enter)")
-        self.btn_run.clicked.connect(self.run_align)
+        self.btn_run.clicked.connect(self._run_or_stop)
         self._icon_btn(self.btn_run, theme.G_RUN)
         lay.addWidget(self.btn_run)
 
@@ -451,9 +453,57 @@ class MainWindow(QMainWindow):
         self.progress.setFixedWidth(160)
         self.progress.hide()
         sb.addPermanentWidget(self.progress)
+        # Dang dung CPU hay GPU + ly do. Truoc day may co GPU ma chua co goi CUDA am tham chay CPU, khong ai biet.
+        self.btn_device = QPushButton()
+        self.btn_device.setFlat(True)
+        self.btn_device.setStyleSheet("QPushButton { padding: 0 8px; min-height: 0; border: none; background: transparent; }")
+        self.btn_device.setFixedHeight(22)
+        self.btn_device.clicked.connect(self._on_device_clicked)
+        sb.addPermanentWidget(self.btn_device)
+        self._show_gpu_status(hw.current_status(self.cfg.get("device", "auto")))
         ver = QLabel(self._version_text())
         ver.setContentsMargins(0, 0, 8, 0)
         sb.addPermanentWidget(ver)
+
+    def _show_gpu_status(self, st):
+        self._gpu_status = st
+        self.btn_device.setText(st.label)
+        self.btn_device.setToolTip(st.detail)
+        can_install = st.state == hw.NEED_PACK and resource("Cai-dat-GPU.bat") is not None
+        self.btn_device.setCursor(Qt.CursorShape.PointingHandCursor if can_install
+                                  else Qt.CursorShape.ArrowCursor)
+
+    def _on_device(self, info):
+        """Tien trinh xu ly bao thiet bi that dang dung."""
+        if info["device"] == "cuda":
+            self.btn_device.setText(f"Đang dùng GPU: {info.get('gpu') or 'NVIDIA'}")
+            self.btn_device.setToolTip("Đang xử lý bằng GPU.")
+            return
+        st = hw.current_status(self.cfg.get("device", "auto"), info.get("cuda_available"))
+        self._show_gpu_status(st)
+        self.btn_device.setText(f"{st.label} ({info.get('threads')} luồng)")
+
+    def _on_device_clicked(self):
+        st = self._gpu_status
+        bat = resource("Cai-dat-GPU.bat")
+        if st.state != hw.NEED_PACK or not bat:
+            QMessageBox.information(self, "CPU / GPU", st.detail)
+            return
+        if self._busy():
+            QMessageBox.information(self, "Đang chạy", "Đợi xử lý xong (hoặc bấm Dừng) rồi hãy cài gói GPU.")
+            return
+        r = QMessageBox.question(
+            self, "Cài gói tăng tốc GPU",
+            "Tải khoảng 2,4 GB, chiếm thêm khoảng 3,5 GB ổ đĩa, xử lý nhanh hơn khoảng 10 lần.\n\n"
+            "SolaSub sẽ đóng để cài; cài xong mở lại. Tiếp tục?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if r != QMessageBox.StandardButton.Yes:
+            return
+        if not self._confirm_discard("đóng SolaSub"):
+            return
+        os.startfile(bat)
+        self._skip_close_confirm = True
+        self.close()
 
     @staticmethod
     def _version_text():
@@ -468,7 +518,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+O"), self, activated=self.pick_audio)
         QShortcut(QKeySequence("Ctrl+Shift+O"), self, activated=self.pick_text)
         QShortcut(QKeySequence("Ctrl+Return"), self,
-                  activated=lambda: self.btn_run.isEnabled() and self.run_align())
+                  activated=lambda: self.btn_run.isEnabled() and self._run_or_stop())
         QShortcut(QKeySequence("Ctrl+S"), self,
                   activated=lambda: self.btn_export.isEnabled() and self.export_srt())
 
@@ -683,7 +733,7 @@ class MainWindow(QMainWindow):
         """Co ket qua chua xuat SRT -> hoi truoc. Tra False neu nguoi dung huy."""
         if self._busy():
             QMessageBox.information(self, "Đang căn chỉnh",
-                                    "Đang chạy căn chỉnh — đợi xong rồi hãy " + action + ".")
+                                    "Đang chạy căn chỉnh — đợi xong (hoặc bấm Dừng) rồi hãy " + action + ".")
             return False
         if not (self.cues and self._dirty):
             return True
@@ -777,6 +827,21 @@ class MainWindow(QMainWindow):
                 "Chưa có văn bản gốc — chạy sẽ chuyển sang chế độ phiên âm (chữ do máy nghe).")
 
     # ================================================================ chay align
+    def _run_or_stop(self):
+        if self._busy():
+            self.stop_align()
+        else:
+            self.run_align()
+
+    def stop_align(self):
+        r = QMessageBox.question(
+            self, "Dừng xử lý", "Dừng xử lý? Phần đã làm sẽ bị bỏ.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+        if r == QMessageBox.StandardButton.Yes and self._busy():
+            self._stage = "Đang dừng…"
+            self.btn_run.setEnabled(False)
+            self.worker.cancel()
+
     def run_align(self):
         import time
         self._remember_lang()
@@ -789,8 +854,8 @@ class MainWindow(QMainWindow):
             model = dlg.model_name()        # phien am phu thuoc hoan toan vao model
 
         self._emphasize_export(False)
-        self.btn_run.setEnabled(False)
-        self.btn_run.setText("Đang căn chỉnh…")
+        self.btn_run.setText("Dừng")
+        self.btn_run.setToolTip("Dừng xử lý và trả lại CPU/GPU cho máy")
         self.btn_export.setEnabled(False)
         self.progress.show()
 
@@ -805,9 +870,11 @@ class MainWindow(QMainWindow):
                 f"{self._stage}   ({time.time()-self._t0:.0f}s)"))
         self._elapsed.start()
 
-        self.worker = AlignWorker(self.audio_path, self.raw_text,
-                                  self._lang_code(), model)
+        self.worker = AlignWorker(self.audio_path, self.raw_text, self._lang_code(), model,
+                                  self.cfg.get("device", "auto"), self.cfg.get("cpu_threads", 0))
         self.worker.progress.connect(self._on_stage)
+        self.worker.device.connect(self._on_device)
+        self.worker.stopped.connect(self.on_stopped)
         self.worker.done.connect(self.on_done)
         self.worker.failed.connect(self.on_failed)
         self.worker.start()
@@ -852,7 +919,16 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         """Luu lua chon truoc khi dong — ke ca khi nguoi dung go tay chu khong chon."""
-        if not self._confirm_discard("đóng SolaSub"):
+        if self._busy():
+            r = QMessageBox.question(
+                self, "Đang xử lý", "Đang xử lý audio. Dừng và đóng SolaSub?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+            if r != QMessageBox.StandardButton.Yes:
+                ev.ignore()
+                return
+            self.worker.cancel()
+            self.worker.wait(5000)
+        if not self._skip_close_confirm and not self._confirm_discard("đóng SolaSub"):
             ev.ignore()
             return
         self.cfg["lang"] = self._lang_code()
@@ -873,7 +949,7 @@ class MainWindow(QMainWindow):
         self._stop_timer()
         self.progress.hide()
         self.btn_run.setText("Chạy lại")
-        self.btn_run.setEnabled(True)
+        self._restore_run_button()
         self.btn_export.setEnabled(True)
         self.btn_play.setEnabled(True)
         self._emphasize_export(True)
@@ -890,11 +966,22 @@ class MainWindow(QMainWindow):
                     f"({100*bad/max(1,tot):.1f}%). Bấm “Xuất SRT” để lưu.")
         self.statusBar().showMessage(head + (f"  [{detail}]" if detail else ""))
 
+    def _restore_run_button(self):
+        self.btn_run.setToolTip("Căn chỉnh văn bản gốc theo audio (Ctrl+Enter)")
+        self.btn_run.setEnabled(True)
+
+    def on_stopped(self):
+        self._stop_timer()
+        self.progress.hide()
+        self.btn_run.setText("Chạy căn chỉnh")
+        self._restore_run_button()
+        self.statusBar().showMessage("Đã dừng.")
+
     def on_failed(self, msg):
         self._stop_timer()
         self.progress.hide()
         self.btn_run.setText("Chạy căn chỉnh")
-        self.btn_run.setEnabled(True)
+        self._restore_run_button()
         QMessageBox.critical(self, "Căn chỉnh thất bại", msg)
         self.statusBar().showMessage("Thất bại.")
 

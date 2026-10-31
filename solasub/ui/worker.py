@@ -1,65 +1,110 @@
-"""Chay align tren luong rieng — 2 tieng audio mat ~35s, khong duoc dong bang giao dien."""
+"""
+Dieu khien tien trinh Whisper (solasub/engine.py) tu mot luong rieng — khong dong bang giao dien.
+Bản thân giao dien KHONG nap torch/model: xong viec tien trinh thoat la tra het RAM + VRAM cho may.
+"""
+import json
+import os
+import subprocess
+import sys
+
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from ..align import load_model, align_words, build_cues, transcribe_words
-from ..problems import detect
-from ..srt import audio_duration
-from ..subtitle import normalize
+from ..settings import APP_DIR
+
+# Uu tien thap: Windows nhuong CPU cho app nguoi dung dang mo. ffmpeg do tien trinh nay goi cung thua huong.
+BELOW_NORMAL = getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0)
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+ENGINE_LOG = os.path.join(APP_DIR, "engine.log")
+
+
+def explain_exit(code, log_tail: str) -> str:
+    """Tien trinh chet ma khong bao ket qua: het RAM / loi driver GPU / crash trong thu vien C++."""
+    msg = (f"Tiến trình xử lý bị dừng đột ngột (mã {code}).\n\n"
+           "Thường do thiếu RAM hoặc lỗi driver GPU. Hãy đóng bớt ứng dụng rồi chạy lại.")
+    return msg + (f"\n\n{log_tail[-500:]}" if log_tail.strip() else "")
 
 
 class AlignWorker(QThread):
-    progress = pyqtSignal(str)          # thong bao tien do
+    progress = pyqtSignal(str)            # thong bao tien do
+    device = pyqtSignal(dict)             # thiet bi that dang dung: device, cuda_available, gpu, threads
     done = pyqtSignal(list, dict, float)  # cues, stats, duration
     failed = pyqtSignal(str)
+    stopped = pyqtSignal()                # nguoi dung bam Dung
 
-    # Model giu lai giua cac lan chay — nap lai moi lan rat phi
-    _model = None
-    _model_name = None
-    _device = None
-
-    def __init__(self, audio, text, lang="ja", model="base", device=None):
+    def __init__(self, audio, text, lang="ja", model="base", device="auto", cpu_threads=0):
         super().__init__()
-        self.audio, self.raw_text = audio, text
-        self.lang, self.model_name, self.device = lang, model, device
+        self.job = {"audio": audio, "text": text, "lang": lang, "model": model,
+                    "device": device, "cpu_threads": cpu_threads, "parent_pid": os.getpid()}
+        self._proc = None
+        self._cancelled = False
+
+    def cancel(self):
+        """Dung ngay: kill ca cay tien trinh (Whisper + ffmpeg no goi). Goi tu luong giao dien."""
+        self._cancelled = True
+        p = self._proc
+        if p is None or p.poll() is not None:
+            return
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True,
+                           timeout=10, creationflags=NO_WINDOW)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if p.poll() is None:
+            p.kill()
+
+    def _command(self):
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        return [sys.executable, "-m", "solasub.engine"], root
 
     def run(self):
+        finished = False
+        log_tail = ""
         try:
-            text = normalize(self.raw_text)
-            # Khong co van ban goc -> chuyen sang che do PHIEN AM (chu do Whisper nghe ra)
-            transcribe_mode = not text
+            os.makedirs(APP_DIR, exist_ok=True)
+            cmd, root = self._command()
+            with open(ENGINE_LOG, "wb") as log:
+                self._proc = subprocess.Popen(cmd, cwd=root, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                              stderr=log, creationflags=BELOW_NORMAL | NO_WINDOW)
+            if self._cancelled:             # bam Dung dung luc dang tao tien trinh
+                self.cancel()
+            self._proc.stdin.write((json.dumps(self.job) + "\n").encode("ascii"))
+            self._proc.stdin.close()
 
-            self.progress.emit("Dang do thoi luong audio…")
-            dur = audio_duration(self.audio)
-            if dur <= 0:
-                self.failed.emit("Khong doc duoc audio (ffmpeg loi?)."); return
-
-            cls = AlignWorker
-            if cls._model is None or cls._model_name != self.model_name:
-                self.progress.emit(f"Dang nap model {self.model_name}…")
-                cls._model, cls._device = load_model(self.model_name, self.device)
-                cls._model_name = self.model_name
-
-            if transcribe_mode:
-                self.progress.emit(
-                    f"Đang phiên âm ({dur/60:.0f} phút audio, {cls._device})… "
-                    f"chậm hơn căn chỉnh nhiều")
-                stream, text = transcribe_words(cls._model, self.audio, self.lang)
-                if not text.strip():
-                    self.failed.emit("Không nghe được chữ nào từ audio."); return
-                text = normalize(text)
+            for line in self._proc.stdout:
+                try:
+                    m = json.loads(line)
+                except ValueError:
+                    continue
+                kind = m.get("type")
+                if kind == "progress":
+                    self.progress.emit(m["msg"])
+                elif kind == "device":
+                    self.device.emit(m)
+                elif kind == "done":
+                    finished = True
+                    self.done.emit(m["cues"], m["stats"], float(m["duration"]))
+                elif kind == "failed":
+                    finished = True
+                    self.failed.emit(m["msg"])
+            code = self._proc.wait()
+            if self._cancelled:
+                self.stopped.emit()
+            elif not finished:
+                try:
+                    with open(ENGINE_LOG, encoding="utf-8", errors="replace") as f:
+                        log_tail = f.read()[-2000:]
+                except OSError:
+                    pass
+                self.failed.emit(explain_exit(code, log_tail))
+        except (OSError, ValueError) as e:  # pipe da dong vi bi kill -> coi nhu Dung
+            if self._cancelled:
+                self.stopped.emit()
             else:
-                self.progress.emit(
-                    f"Đang căn chỉnh ({dur/60:.0f} phút audio, {cls._device})… "
-                    f"khoảng {max(5, int(dur/200))}s")
-                stream = align_words(cls._model, self.audio, text, self.lang, status=self.progress.emit)
-
-            self.progress.emit("Đang chia cue và áp luật phụ đề…")
-            cues = build_cues(stream, text, dur)
-            for c in cues:
-                c["transcribed"] = transcribe_mode
-            stats = detect(cues, dur)
-            stats["_che_do"] = "phiên âm" if transcribe_mode else "căn chỉnh"
-            self.done.emit(cues, stats, dur)
-        except Exception as e:           # noqa: BLE001 — bao loi len UI thay vi crash
-            import traceback
-            self.failed.emit(f"{type(e).__name__}: {e}\n\n{traceback.format_exc()[-800:]}")
+                self.failed.emit(f"Không chạy được tiến trình xử lý: {type(e).__name__}: {e}")
+        finally:
+            p = self._proc
+            if p is not None:
+                try:
+                    p.stdout.close()
+                except OSError:
+                    pass

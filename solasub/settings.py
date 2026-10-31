@@ -19,6 +19,8 @@ DEFAULTS = {
     "last_audio_dir": "",
     "last_text_dir": "",
     "theme": "system",                              # system (theo Windows) | dark | light
+    "device": "auto",                               # auto | cpu — sua tay neu GPU gay loi
+    "cpu_threads": 0,                               # 0 = tu chon (mot nua so nhan); so duong = dat tay
 }
 
 

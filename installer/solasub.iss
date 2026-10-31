@@ -12,7 +12,8 @@
 #define SrcDir         "..\build\SolaSub"
 ; Ghim dung ban torch dang dung: torchaudio 2.11.0 di kem duoc build cho
 ; torch 2.14.1, lay ban moi hon se loi khi import.
-#define TorchPin       "torch==2.14.1"
+#define TorchVer       "2.14.1"
+#define TorchPin       "torch==" + TorchVer
 #define CudaIndex      "https://download.pytorch.org/whl/cu126"
 ; --no-cache-dir: khong giu lai ban wheel 2,4 GB trong %LocalAppData%\pip\Cache
 #define PipFlags       "--no-cache-dir --upgrade --force-reinstall"
@@ -80,19 +81,24 @@ Name: "cuda"; Description: "Tải gói tăng tốc CUDA ngay bây giờ — tả
 ; chi CUDA moi co (torch_cuda.dll...). torch/__init__.py nap MOI *.dll trong torch\lib -> nap lan DLL CUDA cu
 ; voi torch_cpu.dll moi -> loi khi can chinh; con 2 bo dist-info (+cpu va +cu126). Xoa sach torch cu truoc:
 ; ban CPU ra torch CPU sach; ban GPU (tick CUDA) tai lai CUDA sach o buoc [Run].
-Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch"
-Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch-*.dist-info"
+; NGOAI TRU khi goi CUDA dang cai dung phien ban torch cua ban nay (KeepCuda): giu nguyen, khong dong vao -> cai de
+; khong mat GPU, khong phai tai lai 2,4 GB. Truoc day moi lan cai de deu xoa -> may tung chay GPU am tham quay ve CPU.
+Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch"; Check: not KeepCuda
+Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch-*.dist-info"; Check: not KeepCuda
 
 [Files]
 ; KHONG loai __pycache__: build.ps1 da bien dich san .pyc (Python nhung khong tu ghi .pyc ->
 ; thieu thi moi lan mo app phai bien dich lai ~1.000 file, cham vai giay).
+; torch tach rieng de bo qua duoc khi KeepCuda (giu goi CUDA dang co).
+; Ca 2 ban deu kem Cai-dat-GPU.bat: nut "cai goi GPU" tren thanh trang thai cua app can no.
+#define TorchExcludes "\python\Lib\site-packages\torch\,\python\Lib\site-packages\torch-*.dist-info\"
 #ifdef GPU
-Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log"
+Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log,{#TorchExcludes}"
 #else
-; Ban CPU Only thi khong kem script GPU — co trong thu muc ma khong co loi tat
-; chi lam nguoi dung tuong la chay duoc GPU.
-Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log,Cai-dat-GPU.bat,Go-bo-GPU.bat"
+Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log,Go-bo-GPU.bat,{#TorchExcludes}"
 #endif
+Source: "{#SrcDir}\python\Lib\site-packages\torch\*"; DestDir: "{app}\python\Lib\site-packages\torch"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log"; Check: not KeepCuda
+Source: "{#SrcDir}\python\Lib\site-packages\torch-{#TorchVer}+cpu.dist-info\*"; DestDir: "{app}\python\Lib\site-packages\torch-{#TorchVer}+cpu.dist-info"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not KeepCuda
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -112,7 +118,7 @@ Filename: "{app}\python\python.exe"; \
   Parameters: "-m pip install {#PipFlags} {#TorchPin} --index-url {#CudaIndex}"; \
   WorkingDir: "{app}"; \
   StatusMsg: "Đang tải gói tăng tốc GPU (~2,5 GB) — có thể mất vài chục phút..."; \
-  Tasks: cuda; Flags: waituntilterminated
+  Tasks: cuda; Check: not KeepCuda; Flags: waituntilterminated
 #endif
 
 Filename: "{app}\{#MyAppExeName}"; Description: "Mở {#MyAppName} ngay"; Flags: nowait postinstall skipifsilent
@@ -132,6 +138,20 @@ begin
   Result := FileExists(AddBackslash(WizardDirValue) + 'python\Lib\site-packages\torch\lib\torch_cuda.dll');
 end;
 
+var
+  KeepFrozen, KeepSaved: Boolean;
+
+// Goi CUDA dang cai dung phien ban torch cua ban nay -> giu nguyen. Chot gia tri o PrepareToInstall vi [InstallDelete]
+// / [Files] chay sau do va goi lai ham nay (luc do thu muc da doi).
+function KeepCuda: Boolean;
+begin
+  if KeepFrozen then
+    Result := KeepSaved
+  else
+    Result := PrevHasCuda and
+      DirExists(AddBackslash(WizardDirValue) + 'python\Lib\site-packages\torch-{#TorchVer}+cu126.dist-info');
+end;
+
 #ifdef GPU
 var
   WarnedNoNvidia: Boolean;
@@ -140,7 +160,7 @@ var
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpSelectTasks) and PrevHasCuda and (not WizardIsTaskSelected('cuda')) then
+  if (CurPageID = wpSelectTasks) and PrevHasCuda and (not KeepCuda) and (not WizardIsTaskSelected('cuda')) then
     Result := SuppressibleMsgBox('Máy này đang dùng gói tăng tốc GPU (CUDA).' + #13#10#13#10 +
                      'Bạn đã bỏ tick "Tải gói tăng tốc CUDA" — sau khi cài, SolaSub sẽ chạy bằng CPU ' +
                      '(chậm hơn). Muốn giữ tăng tốc thì bấm No rồi tick lại mục đó.' + #13#10#13#10 +
@@ -152,7 +172,7 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpReady) and PrevHasCuda then
+  if (CurPageID = wpReady) and PrevHasCuda and (not KeepCuda) then
     Result := SuppressibleMsgBox('Máy này đang dùng gói tăng tốc GPU (CUDA).' + #13#10#13#10 +
                      'Đây là bộ cài bản CPU: cài xong SolaSub sẽ chạy bằng CPU (chậm hơn).' + #13#10 +
                      'Muốn giữ tăng tốc GPU, hãy bấm No và dùng SolaSub_Setup_GPU.exe.' + #13#10#13#10 +
@@ -189,6 +209,8 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var ResultCode: Integer;
 begin
+  KeepSaved := KeepCuda;
+  KeepFrozen := True;
   Exec('taskkill.exe', '/F /T /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Exec('powershell.exe',
        '-NoProfile -WindowStyle Hidden -Command "Get-Process pythonw -ErrorAction SilentlyContinue |' +

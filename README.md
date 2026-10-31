@@ -64,9 +64,13 @@ Hai bản ở trang [Releases](../../releases/latest). Cùng một phần mềm,
 
 Bản GPU **không đóng gói sẵn CUDA**. Ở bước cuối của trình cài có một ô tick để tải gói tăng tốc về — tick thì tải, không tick thì vẫn chạy bằng CPU bình thường. Làm vậy để người không có card NVIDIA khỏi phải tải thừa 2,4 GB.
 
+Góc dưới bên phải cửa sổ luôn hiện SolaSub đang dùng GPU hay CPU, kèm lý do. Máy có card NVIDIA mà chưa có gói GPU thì bấm vào đó để cài (cả bản CPU lẫn bản GPU).
+
+**Tài nguyên máy:** Whisper chạy trong một tiến trình riêng ở mức ưu tiên thấp, chế độ CPU chỉ dùng một nửa số nhân để máy yếu không quá tải khi xử lý file dài. Xử lý xong tiến trình thoát, trả lại toàn bộ RAM và VRAM (đổi lại mỗi lần chạy nạp lại model vài giây). Bấm **Dừng** để huỷ giữa chừng. Muốn đổi thì sửa `%LocalAppData%\SolaSub\settings.json`: `"cpu_threads"` (0 = tự chọn) và `"device"` (`auto` hoặc `cpu`).
+
 Cài **theo từng người dùng**, không cần quyền quản trị, vào `%LocalAppData%\Programs\SolaSub`.
 
-**Nâng cấp:** cứ cài đè bản mới lên, không cần gỡ bản cũ, cài đặt vẫn giữ nguyên. Nếu đã tải gói CUDA thì dùng lại bộ cài GPU và giữ tick tải CUDA: bộ cài xoá sạch PyTorch cũ trước khi cài (để không lẫn file CUDA cũ với bản mới) nên phải tải lại gói đó.
+**Nâng cấp:** cứ cài đè bản mới lên, không cần gỡ bản cũ, cài đặt vẫn giữ nguyên. Gói CUDA đã tải được giữ lại nếu đúng phiên bản PyTorch của bản mới; khác phiên bản thì bộ cài xoá PyTorch cũ (để không lẫn file) và phải tải lại gói đó bằng bộ cài GPU.
 
 > **SmartScreen sẽ cảnh báo** "Windows protected your PC" vì bộ cài chưa ký số. Bấm *More info* → *Run anyway*.
 
