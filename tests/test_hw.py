@@ -4,6 +4,19 @@ import unittest
 from solasub import hw
 
 
+class GpuError(unittest.TestCase):
+    def test_gpu_errors_fall_back_to_cpu(self):
+        from solasub.engine import is_gpu_error
+        self.assertTrue(is_gpu_error(RuntimeError("CUDA error: device lost")))
+        self.assertTrue(is_gpu_error(RuntimeError("CUDA out of memory. Tried to allocate 2 GiB")))
+        self.assertTrue(is_gpu_error(OSError("cublas64_12.dll not found")))
+
+    def test_other_errors_are_reported(self):
+        from solasub.engine import is_gpu_error
+        self.assertFalse(is_gpu_error(ValueError("bad audio")))
+        self.assertFalse(is_gpu_error(RuntimeError("Failed to load audio")))
+
+
 class CpuLimit(unittest.TestCase):
     def test_half_rounded_up_never_zero(self):
         self.assertEqual([hw.cpu_limit(n) for n in (1, 2, 4, 6, 14)], [1, 1, 2, 3, 7])

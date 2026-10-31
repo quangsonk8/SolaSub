@@ -1,4 +1,4 @@
-; SolaSub — trinh cai dat. Mot script, hai ban:
+﻿; SolaSub — trinh cai dat. Mot script, hai ban:
 ;   ISCC.exe installer\solasub.iss              -> SolaSub_Setup_CPU.exe
 ;   ISCC.exe /DGPU installer\solasub.iss        -> SolaSub_Setup_GPU.exe
 ; Hai ban chua CUNG bo file; ban GPU chi khac o cho tai them torch CUDA
@@ -6,7 +6,7 @@
 ; card NVIDIA, dong vao thi ai cung phai tai thua 2,5 GB.
 
 #define MyAppName      "SolaSub"
-#define MyAppVersion   "1.1.3"
+#define MyAppVersion   "1.1.4"
 #define MyAppPublisher "SOLATECH"
 #define MyAppExeName   "SolaSub.exe"
 #define SrcDir         "..\build\SolaSub"
@@ -91,7 +91,8 @@ Type: filesandordirs; Name: "{app}\python\Lib\site-packages\torch-*.dist-info"; 
 ; thieu thi moi lan mo app phai bien dich lai ~1.000 file, cham vai giay).
 ; torch tach rieng de bo qua duoc khi KeepCuda (giu goi CUDA dang co).
 ; Ca 2 ban deu kem Cai-dat-GPU.bat: nut "cai goi GPU" tren thanh trang thai cua app can no.
-#define TorchExcludes "\python\Lib\site-packages\torch\,\python\Lib\site-packages\torch-*.dist-info\"
+; Khong co dau \ o cuoi: Excludes cua Inno khop ten file/thu muc, co \ cuoi thi khong khop gi ca.
+#define TorchExcludes "\python\Lib\site-packages\torch,\python\Lib\site-packages\torch-" + TorchVer + "+cpu.dist-info"
 #ifdef GPU
 Source: "{#SrcDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pdb,*.log,{#TorchExcludes}"
 #else

@@ -162,6 +162,7 @@ class MainWindow(QMainWindow):
         self.duration = 0.0
         self.worker = None
         self._skip_close_confirm = False
+        self._cuda_seen = None        # ket qua that tu lan chay gan nhat (None = chua chay)
         self._stop_at = None
         self._seek_to = 0
         self._armed = True
@@ -475,6 +476,11 @@ class MainWindow(QMainWindow):
 
     def _on_device(self, info):
         """Tien trinh xu ly bao thiet bi that dang dung."""
+        self._cuda_seen = info.get("cuda_available")
+        if info.get("fallback"):
+            self.btn_device.setText(f"Đang dùng CPU — GPU lỗi / thiếu bộ nhớ ({info.get('threads')} luồng)")
+            self.btn_device.setToolTip("GPU không chạy được lần này nên chuyển sang CPU. Đóng bớt game / app nặng rồi chạy lại.")
+            return
         if info["device"] == "cuda":
             self.btn_device.setText(f"Đang dùng GPU: {info.get('gpu') or 'NVIDIA'}")
             self.btn_device.setToolTip("Đang xử lý bằng GPU.")
@@ -482,6 +488,10 @@ class MainWindow(QMainWindow):
         st = hw.current_status(self.cfg.get("device", "auto"), info.get("cuda_available"))
         self._show_gpu_status(st)
         self.btn_device.setText(f"{st.label} ({info.get('threads')} luồng)")
+
+    def _reset_device_chip(self):
+        """Chay xong: chip quay ve trang thai tinh, khong ghi 'Dang dung GPU' nua."""
+        self._show_gpu_status(hw.current_status(self.cfg.get("device", "auto"), self._cuda_seen))
 
     def _on_device_clicked(self):
         st = self._gpu_status
@@ -501,7 +511,11 @@ class MainWindow(QMainWindow):
             return
         if not self._confirm_discard("đóng SolaSub"):
             return
-        os.startfile(bat)
+        try:
+            os.startfile(bat)
+        except OSError as e:
+            QMessageBox.critical(self, "Cài gói GPU", f"Không mở được trình cài gói GPU:\n{e}")
+            return
         self._skip_close_confirm = True
         self.close()
 
@@ -950,6 +964,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         self.btn_run.setText("Chạy lại")
         self._restore_run_button()
+        self._reset_device_chip()
         self.btn_export.setEnabled(True)
         self.btn_play.setEnabled(True)
         self._emphasize_export(True)
@@ -970,18 +985,21 @@ class MainWindow(QMainWindow):
         self.btn_run.setToolTip("Căn chỉnh văn bản gốc theo audio (Ctrl+Enter)")
         self.btn_run.setEnabled(True)
 
-    def on_stopped(self):
+    def _end_unfinished_run(self):
+        """Dung / that bai: ket qua lan truoc (neu co) van con -> mo lai nut Xuat."""
         self._stop_timer()
         self.progress.hide()
-        self.btn_run.setText("Chạy căn chỉnh")
+        self.btn_run.setText("Chạy lại" if self.cues else "Chạy căn chỉnh")
         self._restore_run_button()
+        self._reset_device_chip()
+        self.btn_export.setEnabled(bool(self.cues))
+
+    def on_stopped(self):
+        self._end_unfinished_run()
         self.statusBar().showMessage("Đã dừng.")
 
     def on_failed(self, msg):
-        self._stop_timer()
-        self.progress.hide()
-        self.btn_run.setText("Chạy căn chỉnh")
-        self._restore_run_button()
+        self._end_unfinished_run()
         QMessageBox.critical(self, "Căn chỉnh thất bại", msg)
         self.statusBar().showMessage("Thất bại.")
 

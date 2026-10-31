@@ -54,6 +54,12 @@ def pick_device(torch, requested: str = "auto"):
     return "cuda" if torch.cuda.is_available() else "cpu"
 
 
+def is_gpu_error(e: Exception) -> bool:
+    """Loi cua GPU (het VRAM, loi driver CUDA luc chay) -> chuyen CPU duoc; loi khac thi bao len nhu thuong."""
+    s = f"{type(e).__name__} {e}".lower()
+    return "outofmemory" in s or "out of memory" in s or "cuda" in s or "cudnn" in s or "cublas" in s
+
+
 def run_job(job: dict, emit) -> None:
     from .align import align_words, build_cues, load_model, transcribe_words
     from .problems import detect
@@ -95,12 +101,12 @@ def run_job(job: dict, emit) -> None:
     try:
         model, _ = load_model(job["model"], device)
         stream, final_text = work(model, where)
-    except torch.cuda.OutOfMemoryError:
-        # GPU qua it VRAM (dang choi game, card 2 GB...) -> chay CPU thay vi bao loi
-        if device != "cuda":
+    except Exception as e:      # noqa: BLE001 — chi nuot loi GPU, con lai raise
+        # GPU qua it VRAM (dang choi game, card 2 GB...) / driver loi -> chay CPU thay vi bao loi
+        if device != "cuda" or not is_gpu_error(e):
             raise
-        emit(type="progress", msg="GPU không đủ bộ nhớ — chuyển sang CPU…")
-        emit(type="device", device="cpu", cuda_available=True, gpu="", threads=threads)
+        emit(type="progress", msg="GPU không dùng được — chuyển sang CPU…")
+        emit(type="device", device="cpu", cuda_available=True, gpu="", threads=threads, fallback=True)
         model = None
         torch.cuda.empty_cache()
         model, _ = load_model(job["model"], "cpu")

@@ -57,7 +57,7 @@ class AlignWorker(QThread):
         return [sys.executable, "-m", "solasub.engine"], root
 
     def run(self):
-        finished = False
+        result = None        # thong diep done / failed — bao cho giao dien SAU khi tien trinh da thoat han
         log_tail = ""
         try:
             os.makedirs(APP_DIR, exist_ok=True)
@@ -80,24 +80,24 @@ class AlignWorker(QThread):
                     self.progress.emit(m["msg"])
                 elif kind == "device":
                     self.device.emit(m)
-                elif kind == "done":
-                    finished = True
-                    self.done.emit(m["cues"], m["stats"], float(m["duration"]))
-                elif kind == "failed":
-                    finished = True
-                    self.failed.emit(m["msg"])
+                elif kind in ("done", "failed"):
+                    result = m
             code = self._proc.wait()
             if self._cancelled:
                 self.stopped.emit()
-            elif not finished:
+            elif result and result["type"] == "done":
+                self.done.emit(result["cues"], result["stats"], float(result["duration"]))
+            elif result:
+                self.failed.emit(result["msg"])
+            else:
                 try:
                     with open(ENGINE_LOG, encoding="utf-8", errors="replace") as f:
                         log_tail = f.read()[-2000:]
                 except OSError:
                     pass
                 self.failed.emit(explain_exit(code, log_tail))
-        except (OSError, ValueError) as e:  # pipe da dong vi bi kill -> coi nhu Dung
-            if self._cancelled:
+        except Exception as e:  # noqa: BLE001 — loi lot khoi QThread.run lam PyQt6 sap ca app
+            if self._cancelled:         # pipe da dong vi bi kill -> coi nhu Dung
                 self.stopped.emit()
             else:
                 self.failed.emit(f"Không chạy được tiến trình xử lý: {type(e).__name__}: {e}")
