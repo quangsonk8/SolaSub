@@ -17,6 +17,26 @@ class GpuError(unittest.TestCase):
         self.assertFalse(is_gpu_error(RuntimeError("Failed to load audio")))
 
 
+class ThreadEnv(unittest.TestCase):
+    def test_every_pool_is_capped(self):
+        env = hw.thread_env(7)
+        for k in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMBA_NUM_THREADS"):
+            self.assertEqual(env[k], "7")
+        self.assertEqual(env["KMP_BLOCKTIME"], "0")
+
+    def test_physical_cores_sane(self):
+        import os
+        n = hw.physical_cores()
+        self.assertTrue(1 <= n <= (os.cpu_count() or 1), n)
+
+    def test_engine_does_not_import_numpy(self):
+        # engine phai dat bien moi truong truoc khi numpy/torch vao -> import engine khong duoc keo numpy theo
+        import subprocess, sys
+        code = "import sys, solasub.engine; print('numpy' in sys.modules, 'torch' in sys.modules)"
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True).stdout.strip()
+        self.assertEqual(out, "False False")
+
+
 class CpuLimit(unittest.TestCase):
     def test_half_rounded_up_never_zero(self):
         self.assertEqual([hw.cpu_limit(n) for n in (1, 2, 4, 6, 14)], [1, 1, 2, 3, 7])

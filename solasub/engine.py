@@ -19,7 +19,7 @@ import os
 import sys
 import threading
 
-from .hw import cpu_limit
+from .hw import cpu_limit, physical_cores, thread_env
 from .paths import ensure_ffmpeg_on_path, hide_subprocess_windows
 
 
@@ -38,14 +38,12 @@ def _watch_parent(pid: int):
     os._exit(3)
 
 
-def limit_cpu(torch, configured: int = 0) -> int:
-    n = cpu_limit(torch.get_num_threads(), configured)
+def limit_cpu(torch, n: int) -> None:
     torch.set_num_threads(n)
     try:
         torch.set_num_interop_threads(1)
     except RuntimeError:            # chi dat duoc truoc khi torch chay phep tinh song song dau tien
         pass
-    return n
 
 
 def pick_device(torch, requested: str = "auto"):
@@ -79,7 +77,8 @@ def run_job(job: dict, emit) -> None:
 
     emit(type="progress", msg=f"Đang nạp model {job['model']}…")
     import torch
-    threads = limit_cpu(torch, int(job.get("cpu_threads") or 0))
+    threads = int(job["threads"])
+    limit_cpu(torch, threads)
     requested = job.get("device") or "auto"
     device = pick_device(torch, requested)
     cuda_ok = bool(torch.cuda.is_available())
@@ -135,6 +134,9 @@ def main():
 
     try:
         job = json.loads(sys.stdin.buffer.readline())
+        # TRUOC moi import numpy/torch (xem hw.thread_env)
+        job["threads"] = cpu_limit(physical_cores(), int(job.get("cpu_threads") or 0))
+        os.environ.update(thread_env(job["threads"]))
         threading.Thread(target=_watch_parent, args=(int(job["parent_pid"]),), daemon=True).start()
         ensure_ffmpeg_on_path()
         hide_subprocess_windows()

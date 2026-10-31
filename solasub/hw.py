@@ -2,6 +2,7 @@
 Phan cung: gioi han CPU + tinh trang GPU. File nay KHONG nap torch — giao dien goi duoc ngay, va
 giao dien khong nap torch thi khong giu RAM / khong khoa DLL khi cai goi GPU.
 """
+import ctypes
 import importlib.metadata
 import os
 import shutil
@@ -40,16 +41,47 @@ def status_of(state: str) -> GpuStatus:
     return GpuStatus(state, *_TEXT[state])
 
 
-def cpu_limit(default_threads: int, configured: int = 0) -> int:
+def physical_cores() -> int:
+    """So nhan THAT (khong tinh hyper-threading). Hoi Windows truc tiep: phai biet TRUOC khi nap numpy/torch."""
+    try:
+        k32 = ctypes.WinDLL("kernel32")
+        size = ctypes.c_ulong(0)
+        k32.GetLogicalProcessorInformationEx(0, None, ctypes.byref(size))  # 0 = RelationProcessorCore
+        buf = ctypes.create_string_buffer(size.value)
+        if k32.GetLogicalProcessorInformationEx(0, buf, ctypes.byref(size)):
+            raw, i, cores = buf.raw, 0, 0
+            while i < size.value:                                          # ban ghi dai ngan khac nhau, Size o byte 4
+                i += int.from_bytes(raw[i + 4:i + 8], "little")
+                cores += 1
+            if cores:
+                return cores
+    except (OSError, AttributeError):
+        pass
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+def cpu_limit(cores: int, configured: int = 0) -> int:
     """
-    So luong CPU cho Whisper. default_threads = so torch tu chon (so nhan that cua may). Mac dinh chi dung MOT NUA:
-    may yeu chay het nhan hang chuc phut voi file dai se qua nhiet / khoi dong lai. configured > 0 (settings.json
-    "cpu_threads") -> theo cau hinh, khong vuot qua default_threads.
+    So luong CPU cho Whisper. Mac dinh chi dung MOT NUA so nhan that: may yeu chay het nhan hang chuc phut voi file
+    dai se qua nhiet / khoi dong lai. configured > 0 (settings.json "cpu_threads") -> theo cau hinh, khong vuot so nhan.
     """
-    default_threads = max(1, default_threads)
+    cores = max(1, cores)
     if configured > 0:
-        return min(configured, default_threads)
-    return max(1, (default_threads + 1) // 2)
+        return min(configured, cores)
+    return max(1, (cores + 1) // 2)
+
+
+# Moi thu vien co be luong RIENG, tu mo theo so nhan may. torch.set_num_threads CHI gioi han torch: do that 1.1.4 voi
+# file 43 phut tien trinh len 100 luong, ca may 100% (dat cac bien nay: cao nhat 55%, thoi gian khong doi).
+_POOL_VARS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS",
+              "VECLIB_MAXIMUM_THREADS", "NUMBA_NUM_THREADS")
+
+
+def thread_env(n: int) -> dict:
+    """Bien moi truong gioi han moi be luong. PHAI dat TRUOC khi import numpy/torch — sau do thu vien bo qua."""
+    env = {k: str(n) for k in _POOL_VARS}
+    env["KMP_BLOCKTIME"] = "0"      # luong OpenMP ranh thi ngu ngay, khong quay vong ton CPU
+    return env
 
 
 def torch_build() -> str:
