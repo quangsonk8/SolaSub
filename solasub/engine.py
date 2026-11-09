@@ -121,6 +121,7 @@ def run_job(job: dict, emit) -> None:
         c["transcribed"] = transcribe_mode
     stats = detect(cues, dur)
     stats["_che_do"] = "phiên âm" if transcribe_mode else "căn chỉnh"
+    stats["_thieu"] = stream.missing_regions()      # doan kich ban khong co trong audio (UI bao rieng)
     emit(type="done", cues=cues, stats=stats, duration=dur)
 
 

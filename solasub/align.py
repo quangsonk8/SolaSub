@@ -19,6 +19,7 @@ class Word:
     start: float
     end: float
     prob: float
+    missing: bool = False   # chu trong kich ban KHONG co trong audio (xem recover.py); start == end == diem cat
 
 
 class WordStream:
@@ -32,11 +33,34 @@ class WordStream:
         self.words = words
         # moc ky tu (bo khoang trang) tich luy tai dau moi word
         self._offsets = []
+        self._lens = []
         n = 0
         for w in words:
             self._offsets.append(n)
-            n += sum(1 for c in w.text if not c.isspace())
+            k = sum(1 for c in w.text if not c.isspace())
+            self._lens.append(k)
+            n += k
         self.total_chars = n
+        self.has_missing = any(w.missing for w in words)
+
+    def missing_chars(self, a: int, b: int) -> int:
+        """So ky tu trong [a, b) thuoc doan KHONG co trong audio."""
+        if not self.has_missing or b <= a:
+            return 0
+        import bisect
+        i = max(0, bisect.bisect_right(self._offsets, a) - 1)
+        n = 0
+        while i < len(self.words) and self._offsets[i] < b:
+            if self.words[i].missing:
+                lo, hi = max(a, self._offsets[i]), min(b, self._offsets[i] + self._lens[i])
+                n += max(0, hi - lo)
+            i += 1
+        return n
+
+    def missing_regions(self):
+        """Cac doan kich ban khong co trong audio: [{time, chars, text}] (text = phan dau de nguoi dung nhan ra)."""
+        return [{"time": w.start, "chars": self._lens[k], "text": "".join(w.text.split())[:24]}
+                for k, w in enumerate(self.words) if w.missing]
 
     def span(self, a: int, b: int):
         """
@@ -86,10 +110,33 @@ def _result_words(result, offset: float = 0.0) -> List[Word]:
             for s in result.segments for w in getattr(s, "words", []) or []]
 
 
+RECOVER_SHARE = 0.05    # > 5% chu con lech nhip sau khi sua cuc bo -> nghi kich ban co doan khong co trong audio
+LOCAL_REPAIR_MAX = 0.30 # hong qua 30% thi sua cuc bo vo ich (khong con moc dung de bam) -> di thang buoc do doan thieu
+
+
+def bad_share(words: List[Word]) -> float:
+    """Ty le ky tu nam trong vung align lech nhip / bo cuoc."""
+    total = sum(_nchars(w.text) for w in words)
+    if not total:
+        return 0.0
+    return sum(_nchars(w.text) for w, f in zip(words, _bad_flags(words)) if f) / total
+
+
 def align_words(model, audio: str, text: str, language: str = "ja", status=None) -> WordStream:
     """Chay forced alignment, tra ve chuoi tu. `text` PHAI la ban da normalize."""
     words = _result_words(model.align(audio, text, language=language))
-    words = repair_alignment(model, audio, words, language, status)
+    share = bad_share(words)
+    repaired = share < LOCAL_REPAIR_MAX
+    if repaired:
+        words = repair_alignment(model, audio, words, language, status)
+        share = bad_share(words)
+    if share > RECOVER_SHARE and isinstance(audio, str):
+        from .recover import recover_missing
+        recovered = recover_missing(model, audio, text, language, status)
+        if recovered is not None:
+            return WordStream(recovered)
+    if not repaired:
+        words = repair_alignment(model, audio, words, language, status)
     return WordStream(words)
 
 
@@ -101,6 +148,12 @@ _W_CHARS = 60          # cua so do toc do doc (ky tu, khong tinh khoang trang)
 _MAX_CPS = 25.0        # nhanh hon = bi DON (TTS nhanh nhat ~10 ky tu/giay)
 _MIN_CPS = 60 / 45.0   # 60 ky tu keo dai qua 45s = bi GIAN (nhay coc)
 _SR = 16000
+
+
+def mmss(t: float) -> str:
+    """Giay -> 'p:ss' (lay phan nguyen; :.0f lam tron 6,5 phut thanh 7 va 59,6 giay thanh 60)."""
+    t = int(max(0.0, t))
+    return f"{t // 60}:{t % 60:02d}"
 
 
 def _nchars(s: str) -> int:
@@ -184,7 +237,7 @@ def repair_alignment(model, audio, words: List[Word], language: str, status=None
                 continue
             seg_text = "".join(w.text for w in words[a:b + 1])
             if status:
-                status(f"Căn chỉnh lại đoạn {t0 / 60:.0f}:{t0 % 60:02.0f}–{t1 / 60:.0f}:{t1 % 60:02.0f}…")
+                status(f"Căn chỉnh lại đoạn {mmss(t0)}–{mmss(t1)}…")
             try:
                 clip = arr[int(t0 * _SR):int(t1 * _SR)]
                 new = _result_words(model.align(clip, seg_text, language=language), offset=t0)
@@ -250,11 +303,17 @@ def build_cues(stream: WordStream, text: str, duration: float):
                 pending = pieces + pending
                 continue
 
+        # Doan kich ban khong co trong audio: >= nua cue -> ca cue coi nhu thieu (khong xuat SRT); it hon -> van
+        # giu gio cua phan co doc, chi bao nguoi dung xem lai.
+        miss = stream.missing_chars(pos, pos + need)
+        missing = miss * 2 >= need
         cues.append({
             "start": start, "end": end, "text": seg,
             "prob": prob,
             "n_words": max(1, n_valid),
-            "failed": n_valid == 0,          # moi word deu start==end -> align hong
+            "failed": n_valid == 0 and not missing,   # moi word deu start==end -> align hong
+            "missing": missing,
+            "partial_missing": 0 < miss and not missing,
         })
         pos += need
 
@@ -263,6 +322,7 @@ def build_cues(stream: WordStream, text: str, duration: float):
         if cues[i]["start"] < cues[i - 1]["start"]:
             cues[i]["start"] = cues[i - 1]["start"]
 
-    # preserve_starts: moc bat dau la su that do duoc, khong duoc day muon lai
-    apply_film_style(cues, duration, preserve_starts=True)
+    # preserve_starts: moc bat dau la su that do duoc, khong duoc day muon lai.
+    # Cue thieu giu nguyen start == end == diem cat, khong tham gia luat phim (khong co gi de hien).
+    apply_film_style([c for c in cues if not c["missing"]], duration, preserve_starts=True)
     return cues

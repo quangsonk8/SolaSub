@@ -19,9 +19,15 @@ def detect(cues, duration):
     stats = {}
     n = len(cues)
     for i, c in enumerate(cues):
+        if c.get("missing"):
+            # Kich ban co, audio khong doc -> khong co gio de do; cac kiem tra khac vo nghia
+            c["issues"] = ["khong_co_trong_audio"]
+            continue
         issues = []
         dur = c["end"] - c["start"]
 
+        if c.get("partial_missing"):
+            issues.append("thieu_mot_phan")
         if c.get("failed"):
             issues.append("align_hong")          # moi word deu start==end
         if dur <= 0.05:

@@ -42,7 +42,7 @@ def main():
     print(f"[model] {args.model} tren {device} ({time.time()-t0:.1f}s)")
 
     t0 = time.time()
-    stream = align_words(model, args.audio, text, args.lang)
+    stream = align_words(model, args.audio, text, args.lang, status=lambda m: print("  ..", m, flush=True))
     t_align = time.time() - t0
     print(f"[align] {t_align:.1f}s -> nhanh gap {dur/t_align:.0f}x thoi gian thuc"
           f" | {len(stream.words)} tu")
@@ -59,6 +59,12 @@ def main():
     for k, v in sorted(stats.items()):
         if not k.startswith("_"):
             print(f"    {k:22s} {v}")
+    missing = stream.missing_regions()
+    if missing:
+        print(f"\n[CANH BAO] audio THIEU {len(missing)} doan so voi van ban"
+              f" ({sum(r['chars'] for r in missing)} ky tu, khong xuat vao SRT):")
+        for r in missing:
+            print(f"    {r['time'] // 60:3.0f}:{r['time'] % 60:05.2f}  {r['chars']:5d} ky tu  {r['text']}")
 
     json.dump({"stats": stats, "align_seconds": t_align, "duration": dur,
                "model": args.model, "device": device, "cues": cues},

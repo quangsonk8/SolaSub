@@ -38,14 +38,15 @@ def write_srt(cues, path: str, wrap=True):
     n = 1
     for c in cues:
         text = c["text"].strip()
-        if not text:
+        if not text or c.get("missing"):    # khong co trong audio -> khong co gio de hien
             continue
         buf.append(str(n))
         buf.append(f"{ts(c['start'])} --> {ts(c['end'])}")
         buf.append(wrap_lines(text) if wrap else text)
         buf.append("")
         n += 1
-    io.open(path, "w", encoding="utf-8").write("\n".join(buf) + "\n")
+    with io.open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(buf) + "\n")
     return n - 1
 
 

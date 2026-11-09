@@ -42,6 +42,8 @@ ISSUE_LABEL = {
     "qua_dai": "quá dài",
     "qua_ngan": "quá ngắn",
     "dong_tran": "dòng tràn",
+    "khong_co_trong_audio": "không có trong audio (không xuất SRT)",
+    "thieu_mot_phan": "audio thiếu một phần câu",
 }
 
 
@@ -980,6 +982,24 @@ class MainWindow(QMainWindow):
             head = (f"Xong — {tot} cue, {bad} cần xem "
                     f"({100*bad/max(1,tot):.1f}%). Bấm “Xuất SRT” để lưu.")
         self.statusBar().showMessage(head + (f"  [{detail}]" if detail else ""))
+        if stats.get("_thieu"):
+            self._warn_missing(stats["_thieu"])
+
+    def _warn_missing(self, regions):
+        """Audio thieu doan so voi kich ban: loi o FILE AUDIO, nguoi dung can biet ngay (khong chi 1 dong trang thai)."""
+        n_lines = sum(1 for c in self.cues if c.get("missing"))
+        chars = sum(r["chars"] for r in regions)
+        shown = regions[:12]
+        where = "\n".join(f"  • {ts(r['time']).split(',')[0]} — thiếu {r['chars']} ký tự: 「{r['text']}…」"
+                          for r in shown)
+        more = f"\n  … và {len(regions) - len(shown)} chỗ khác" if len(regions) > len(shown) else ""
+        QMessageBox.warning(
+            self, "Audio thiếu nội dung",
+            f"Có {len(regions)} đoạn trong văn bản gốc KHÔNG được đọc trong audio "
+            f"(tổng {chars} ký tự, {n_lines} dòng phụ đề).\n\n"
+            f"Vị trí trong audio (chỗ bị nhảy qua):\n{where}{more}\n\n"
+            "Thường do file audio bị cắt / ghép thiếu khi tạo — nên kiểm tra lại hoặc tạo lại audio.\n"
+            "Các dòng đó được đánh dấu ∅ và sẽ KHÔNG được xuất vào SRT; phần còn lại vẫn căn đúng giờ.")
 
     def _restore_run_button(self):
         self.btn_run.setToolTip("Căn chỉnh văn bản gốc theo audio (Ctrl+Enter)")
@@ -1019,8 +1039,9 @@ class MainWindow(QMainWindow):
         mono = QFont(); mono.setFamilies(["Cascadia Mono", "Consolas", "Inter"]); mono.setPixelSize(12)
         for r, (i, c) in enumerate(rows):
             issues = c.get("issues") or []
-            bad = "align_hong" in issues
-            mark = "✕" if bad else ("⚠" if issues else "")
+            missing = "khong_co_trong_audio" in issues
+            bad = missing or "align_hong" in issues
+            mark = "∅" if missing else "✕" if bad else ("⚠" if issues else "")
             color = QColor(p["bad"] if bad else p["issue"] if issues else p["ok"])
             tint = QColor(0, 0, 0, 0)
             if issues:
@@ -1089,6 +1110,7 @@ class MainWindow(QMainWindow):
         lo = self.cues[i - 1]["end"] if i > 0 else 0.0
         hi = self.cues[i + 1]["start"] if i < len(self.cues) - 1 else self.duration
         value = max(lo, min(value, hi))
+        c["missing"] = False          # nguoi dung tu dat gio = khang dinh cau nay co trong audio -> xuat SRT
         if field == "start":
             c["start"] = min(value, c["end"] - 0.1)
         else:
@@ -1199,7 +1221,9 @@ class MainWindow(QMainWindow):
             return
         n = write_srt(self.cues, p)
         self._dirty = False
-        self.statusBar().showMessage(f"Đã lưu {n} cue vào {p}")
+        skipped = sum(1 for c in self.cues if c.get("missing"))
+        note = f" (bỏ {skipped} dòng không có trong audio)" if skipped else ""
+        self.statusBar().showMessage(f"Đã lưu {n} cue vào {p}{note}")
 
 
 def _rgba(css):
